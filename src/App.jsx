@@ -4,6 +4,7 @@ import {
   mean, sum, churnRate, fmtInt, fmtPct, fmtNum, fmtINR, fmtINRShort,
 } from './lib/data.js';
 import { Segmented } from './components/ui.jsx';
+import { DEFAULT_ASSUMPTIONS } from './lib/analyses.js';
 import ChurnTab from './tabs/ChurnTab.jsx';
 import PrimeTab from './tabs/PrimeTab.jsx';
 import LtvTab from './tabs/LtvTab.jsx';
@@ -84,6 +85,7 @@ export default function App() {
   const [source, setSource] = useState({ name: 'Embedded dataset (5,000 customers)', text: EMBEDDED_CSV });
   const [error, setError] = useState(null);
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
+  const [assume, setAssume] = useState(DEFAULT_ASSUMPTIONS);
   const [tab, setTab] = useState(() => {
     try { const t = localStorage.getItem('apay-tab'); return TABS.some((x) => x.id === t) ? t : 'summary'; } catch { return 'summary'; }
   });
@@ -118,7 +120,7 @@ export default function App() {
   };
 
   const current = TABS.find((t) => t.id === tab) || TABS[0];
-  const props = { rows, base: dataset.rows, filters };
+  const props = { rows, base: dataset.rows, filters, assume, setAssume, dropped: dataset.dropped, isFiltered: rows.length !== dataset.rows.length };
 
   return (
     <div className="app">
@@ -168,7 +170,7 @@ export default function App() {
           </button>
         ))}
       </nav>
-      <p className="tab-q">{current.q}</p>
+      {tab === 'summary' || tab === 'blueprint' ? <p className="tab-q">{current.q}</p> : <div style={{ height: 6 }} />}
 
       <main>
         {rows.length < 30 ? (

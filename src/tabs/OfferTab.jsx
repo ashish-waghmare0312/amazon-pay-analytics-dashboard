@@ -40,10 +40,10 @@ const PLAYS = {
 
 const z = { a: 1.96, b: 0.8416 };
 
-export default function OfferTab({ rows }) {
-  const [take, setTake] = useState(0.6);
-  const [cbRate, setCbRate] = useState(0.4);
-  const [cbCut, setCbCut] = useState(60);
+export default function OfferTab({ rows, assume, setAssume }) {
+  const { take, cbRate, cbCut } = assume;
+  const upd = (k) => (v) => setAssume((a) => ({ ...a, [k]: v }));
+  const setTake = upd('take'), setCbRate = upd('cbRate'), setCbCut = upd('cbCut');
   const [params, setParams] = useState(() => Object.fromEntries(Object.entries(PLAYS).map(([k, v]) => [k, { cost: v.cost, red: v.red, save: v.save }])));
   const [blanketPct, setBlanketPct] = useState(0.5);
   const [blanketRed, setBlanketRed] = useState(5);
@@ -77,6 +77,7 @@ export default function OfferTab({ rows }) {
     return out;
   }, [rows, params, T, CB, cbCut]);
 
+  const top20Share = useMemo(() => { const s = [...rows].sort((a, b) => b.ltv - a.ltv); return sum(s.slice(0, Math.round(s.length * 0.2)), 'ltv') / sum(s, 'ltv'); }, [rows]);
   const tot = cells.reduce((a, c) => ({
     n: a.n + c.n, offerCost: a.offerCost + c.offerCost, cbSaving: a.cbSaving + c.cbSaving, retainedValue: a.retainedValue + c.retainedValue, net: a.net + c.net, savedUsers: a.savedUsers + c.savedUsers,
   }), { n: 0, offerCost: 0, cbSaving: 0, retainedValue: 0, net: 0, savedUsers: 0 });
@@ -98,12 +99,12 @@ export default function OfferTab({ rows }) {
 
   return (
     <>
-      <SectionTitle title="Q5 · How should Amazon Pay personalise offers?">
+      <SectionTitle title="Q5 · How can Amazon Pay personalise offers to improve retention?">
         Segmentation = LTV-proxy rank (value tier) × <code>Cashback used pct</code> (reliance), with an overlay of distress signals (<code>Net promoter score</code> &lt; 0 or <code>Customer support contacts</code> ≥ 7). Methods: value × reliance matrix, scenario P&amp;L, blanket-vs-targeted comparison, A/B power analysis.
       </SectionTitle>
       <PillContrast
         blue={<>“Retention is a cashback problem. Raise the cashback rate for everyone and churn will fall.”</>}
-        red={<>Cashback has ~zero elasticity in this sample (Q4) and churn is not segment-predictable (Q1), so a blanket rate hike is pure <Concept name="Diminishing Marginal Utility">margin bleed</Concept>. The lever that does vary is <b>value</b> (Q3: top 20% = most of the pool). So personalise on <b>value × reliance</b>: protect whales with status, convert the middle with habits, and wean the mercenaries.</>}
+        red={<>In the full 5,000-user sample, cashback has ~zero elasticity (Q4) and churn is not segment-predictable (Q1), so a blanket rate hike is pure <Concept name="Diminishing Marginal Utility">margin bleed</Concept>. The lever that does vary is <b>value</b> (Q3: top 20% = {fmtPct(top20Share, 0)} of the pool). So personalise on <b>value × reliance</b>: protect whales with status, convert the middle with habits, and wean the mercenaries.</>}
       />
 
       <div className="sim-grid">

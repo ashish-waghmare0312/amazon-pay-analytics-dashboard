@@ -32,11 +32,10 @@ export function personaOf(r, cbCut, engHi, engLo) {
   return 'middle';
 }
 
-export default function CashbackTab({ rows }) {
-  const [cbCut, setCbCut] = useState(60);
-  const [engHi, setEngHi] = useState(7);
-  const [engLo, setEngLo] = useState(4);
-  const [cbRate, setCbRate] = useState(0.4);
+export default function CashbackTab({ rows, assume, setAssume }) {
+  const { cbCut, engHi, engLo, cbRate } = assume;
+  const upd = (k) => (v) => setAssume((a) => ({ ...a, [k]: v }));
+  const setCbCut = upd('cbCut'), setEngHi = upd('engHi'), setEngLo = upd('engLo'), setCbRate = upd('cbRate');
   const [heatMetric, setHeatMetric] = useState('txns');
 
   // dose–response by cashback decile (10-pt bins)
@@ -95,12 +94,12 @@ export default function CashbackTab({ rows }) {
 
   return (
     <>
-      <SectionTitle title="Q4 · Is cashback driving real engagement or deal-seeking?">
+      <SectionTitle title="Q4 · Is cashback usage driving real engagement or only deal-seeking behaviour?">
         Columns: <code>Cashback used pct</code> vs <code>Avg monthly transactions</code>, <code>Avg transaction value inr</code>, <code>App engagement score</code>, <code>Churned</code>, <code>Net promoter score</code>. Methods: dose–response by decile, ANOVA/χ² across cashback tiers, Pearson r, rule-based engagement × reliance personas (transparent thresholds, no model).
       </SectionTitle>
       <PillContrast
         blue={<>“Cashback works: it builds a <Concept name="Habit Loop">habit loop</Concept>, the reward trains repeat use, and heavy redeemers are our most engaged users.”</>}
-        red={<>Across ten cashback-utilisation bands, average monthly transactions vary by only <b>{fmtNum(txnSpread, 1)}</b> (max − min), and {sigOutcomes.length === 0 ? 'none' : sigOutcomes.length} of {tierTests.length} outcomes differ significantly across cashback tiers (all |r| &lt; {Math.max(...tierTests.map((t) => Math.abs(t.r))).toFixed(3)}). Cashback is being consumed as <Concept name="Mental Accounting">“free money”</Concept>, not converted into frequency, ticket size or loyalty. That is <Concept name="Diminishing Marginal Utility" /> at its limit: the marginal rupee buys ~zero behaviour.</>}
+        red={<>Across ten cashback-utilisation bands, average monthly transactions vary by only <b>{fmtNum(txnSpread, 1)}</b> (max − min), and {sigOutcomes.length === 0 ? 'none' : sigOutcomes.length} of {tierTests.length} outcomes differ significantly across cashback tiers (all |r| ≤ {Math.max(...tierTests.map((t) => Math.abs(t.r))).toFixed(3)}). Cashback is being consumed as <Concept name="Mental Accounting">“free money”</Concept>, not converted into frequency, ticket size or loyalty. That is <Concept name="Diminishing Marginal Utility" /> at its limit: the marginal rupee buys ~zero behaviour.</>}
       />
 
       <div className="grid g2">
@@ -147,7 +146,7 @@ export default function CashbackTab({ rows }) {
           </div>
           <div className="heat-scale"><span>{HM.f(heat.lo)}</span>{SEQ.map((c) => <i key={c} style={{ background: c }} />)}<span>{HM.f(heat.hi)}</span></div>
           <Callout tone="info" title="Reading the grid">
-            Colour range spans only {HM.f(heat.lo)} to {HM.f(heat.hi)}. The scale is stretched to show any gradient at all; neither direction (more cashback, more engagement) produces a consistent step-up.
+            Colour range spans only {HM.f(heat.lo)} to {HM.f(heat.hi)}. The scale is stretched to show any gradient at all{sigOutcomes.length === 0 ? '; neither direction (more cashback, more engagement) produces a consistent step-up' : '; check the significance badges below before reading a gradient as real'}.
           </Callout>
         </Card>
       </div>
@@ -219,7 +218,7 @@ export default function CashbackTab({ rows }) {
             </table>
           </div>
           <Callout tone="warn" title="Verdict: deal-seeking, not engagement">
-            Mercenary deal-seekers and utility-led loyalists behave alike: churn {fmtPct(P.mercenary.churn)} vs {fmtPct(P.utility.churn)} (<Sig p={mu.churn.p} />), {fmtNum(P.mercenary.txns, 1)} vs {fmtNum(P.utility.txns, 1)} txns/month (<Sig p={mu.txns.p} />).
+            Mercenary deal-seekers and utility-led loyalists {mu.churn.p >= 0.05 && mu.txns.p >= 0.05 ? 'behave alike' : 'differ on some measures'}: churn {fmtPct(P.mercenary.churn)} vs {fmtPct(P.utility.churn)} (<Sig p={mu.churn.p} />), {fmtNum(P.mercenary.txns, 1)} vs {fmtNum(P.utility.txns, 1)} txns/month (<Sig p={mu.txns.p} />).
             So the cashback mercenaries absorb (<b>{fmtPct(P.mercenary.cost / totalCost, 0)}</b> of budget, {fmtINRShort(mercCost)}/yr in this sample) buys <b>no extra frequency or retention</b>, and heavy-cashback personas take {fmtPct(subsidyShare, 0)} of total spend for the same behaviour as light users.
             Cashback here is a <b>price discount, not a habit former</b>: pull it from mercenaries and redeploy it as capped, conditional, <Concept name="Goal-Gradient Effect">goal-gradient</Concept> rewards (see Offer Lab).
           </Callout>

@@ -55,13 +55,13 @@ export default function PrimeTab({ rows }) {
 
   return (
     <>
-      <SectionTitle title="Q2 · Does Prime lift frequency & loyalty?">
+      <SectionTitle title="Q2 · How does Prime membership affect transaction frequency and loyalty?">
         Columns: <code>Amazon prime member</code> vs <code>Avg monthly transactions</code>, <code>Avg transaction value inr</code>, <code>App engagement score</code>, <code>Net promoter score</code>, <code>Churned</code>. Methods: Welch t-test, two-proportion z-test, Cohen's d, box plots, stratified churn by segment.
       </SectionTitle>
       {both && (
         <PillContrast
           blue={<>“Prime is the ultimate <Concept name="Carrot-and-Stick" /> moat: the annual fee creates <Concept name="Sunk Cost Fallacy">sunk-cost</Concept> lock-in, so Prime members pay more often and churn less.”</>}
-          red={<>Prime members transact <b>{fmtNum(tests[0].mb, 1)}</b> vs <b>{fmtNum(tests[0].ma, 1)}</b> times a month and churn at <b>{fmtPct(churnT.pb)}</b> vs <b>{fmtPct(churnT.pa)}</b> (p = {fmtP(churnT.p)}). {sigTests.length === 0 ? 'No metric' : `${sigTests.length} metric(s)`} differs significantly. Prime's carrot lands on <b>Amazon shopping</b>, not on <b>Amazon Pay</b>: the stick (losing free delivery) never touches the payment habit. The Prime moat is real but <b>not wired into the wallet</b>.</>}
+          red={<>Prime members transact <b>{fmtNum(tests[0].mb, 1)}</b> vs <b>{fmtNum(tests[0].ma, 1)}</b> times a month and churn at <b>{fmtPct(churnT.pb)}</b> vs <b>{fmtPct(churnT.pa)}</b> (p = {fmtP(churnT.p)}). {sigTests.length === 0 ? 'No metric differs significantly.' : <>{sigTests.length} metric(s) differ significantly ({sigTests.map((t) => `${t.label}: ${t.mb > t.ma ? 'Prime higher' : 'Prime lower'}`).join('; ')}).</>} {churnT.p < 0.05 && churnT.diff < 0 ? 'Prime does protect retention in this view, but ' : ''}Prime's carrot lands on <b>Amazon shopping</b>, not on <b>Amazon Pay</b>: the stick (losing free delivery) never touches the payment habit. The Prime moat is real but <b>not wired into the wallet</b>.</>}
         />
       )}
 

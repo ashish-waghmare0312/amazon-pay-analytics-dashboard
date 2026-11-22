@@ -1,21 +1,14 @@
 import React, { useMemo } from 'react';
 import { Card, Callout } from '../components/ui.jsx';
 import { SectionTitle, Concept, MacroPanel, Sig } from '../components/narrative.jsx';
-import { welch, propTest, chiSquare, anova } from '../lib/stats.js';
+import { welch, propTest, anova } from '../lib/stats.js';
+import { churnBattery } from '../lib/analyses.js';
 import { churnRate, mean, sum, pearson, groupBy, fmtPct, fmtInt, fmtNum, fmtINRShort, TIERS, GENDERS, AGE_BRACKETS, INCOME_Q } from '../lib/data.js';
 import { personaOf } from './CashbackTab.jsx';
 
-export default function SummaryTab({ rows, goTo }) {
+export default function SummaryTab({ rows, goTo, assume, dropped = 0, isFiltered }) {
   const s = useMemo(() => {
-    const act = rows.filter((r) => !r.churned), ch = rows.filter((r) => r.churned);
-    const feats = ['tenure', 'engagement', 'support', 'nps', 'age', 'income', 'txns', 'atv', 'cashback'];
-    const churnTests = feats.map((k) => welch(act, ch, k));
-    const cats = [
-      chiSquare(rows, (r) => r.tier, TIERS), chiSquare(rows, (r) => r.gender, GENDERS),
-      chiSquare(rows, (r) => r.ageB, AGE_BRACKETS), chiSquare(rows, (r) => r.incQ, INCOME_Q),
-    ];
-    const minChurnP = Math.min(...churnTests.map((t) => t.p), ...cats.map((c) => c.p));
-    const sigChurn = churnTests.filter((t) => t.p < 0.05).length + cats.filter((c) => c.p < 0.05).length;
+    const bat = churnBattery(rows);
     const prime = rows.filter((r) => r.prime), non = rows.filter((r) => !r.prime);
     const pChurn = propTest(non, prime);
     const pTx = welch(non, prime, 'txns');
@@ -24,17 +17,17 @@ export default function SummaryTab({ rows, goTo }) {
     const top20 = sum(sorted.slice(0, Math.round(rows.length * 0.2)), 'ltv') / total;
     const ltvTier = anova(groupBy(rows, (r) => r.tier, TIERS), 'ltv');
     const cbR = Math.max(...['txns', 'atv', 'engagement', 'churned'].map((k) => Math.abs(pearson(rows, 'cashback', k))));
-    const merc = rows.filter((r) => personaOf(r, 60, 7, 4) === 'mercenary');
-    const util = rows.filter((r) => personaOf(r, 60, 7, 4) === 'utility');
+    const merc = rows.filter((r) => personaOf(r, assume.cbCut, assume.engHi, assume.engLo) === 'mercenary');
+    const util = rows.filter((r) => personaOf(r, assume.cbCut, assume.engHi, assume.engLo) === 'utility');
     const mu = propTest(util, merc);
     const overSpend = rows.filter((r) => r.gmv > r.income).length;
-    return { sigChurn, nTests: churnTests.length + cats.length, minChurnP, pChurn, pTx, top20, ltvTier, cbR, merc, util, overSpend, mu };
-  }, [rows]);
+    return { bat, pChurn, pTx, top20, ltvTier, cbR, merc, util, overSpend, mu };
+  }, [rows, assume]);
 
   const findings = [
     {
       tab: 'churn', q: 'Q1 Churn',
-      t: <>Churn ({fmtPct(churnRate(rows))}) is <b>not profile-driven</b>. {s.sigChurn} of {s.nTests} Welch/χ² tests reach p &lt; .05 (smallest p = {fmtNum(s.minChurnP, 3)}). Engagement, NPS, support, tenure, income and tier look identical for churned and active users. Retention must become <b>event-triggered</b> (failed payments, refund delays, rival offers).</>,
+      t: <>Churn ({fmtPct(churnRate(rows))}) is <b>not profile-driven</b>. {s.bat.sig.length} of {s.bat.total} Welch/χ² tests reach p &lt; .05 (smallest p = {fmtNum(s.bat.minP, 3)}, {s.bat.minLabel}){s.bat.sig.length ? <>: {s.bat.sig.map((x) => x.label).join(', ')}{s.bat.bonf.length ? <>; {s.bat.bonf.map((x) => x.label).join(', ')} survive{s.bat.bonf.length === 1 ? 's' : ''} Bonferroni correction, a segment-specific lead worth testing</> : <>, about what chance alone would produce across {s.bat.total} tests</>}</> : ''}. {s.bat.topGroup && Math.abs(s.bat.topGroup.z) >= 1.96 ? <>The only standout single group is {s.bat.topGroup.dim} = {s.bat.topGroup.key} at {fmtPct(s.bat.topGroup.rate)} churn, but on just n = {fmtInt(s.bat.topGroup.n)}. </> : ''}Retention must become <b>event-triggered</b> (failed payments, refund delays, rival offers).</>,
     },
     {
       tab: 'prime', q: 'Q2 Prime',
@@ -65,13 +58,14 @@ export default function SummaryTab({ rows, goTo }) {
             The 5,000-user sample says otherwise: <b>churn is demographically random, Prime doesn't move the wallet, and cashback buys no behaviour</b>, while
             <b> {fmtPct(s.top20, 0)} of value sits with 20% of users</b>. Amazon Pay's problem is not too little cashback; it is <b>cashback aimed at the wrong people for the wrong reason</b>.
           </p>
+          {isFiltered && <p className="lede" style={{ fontSize: 12, color: 'var(--text-muted)' }}>This headline describes the full 5,000-user sample. The findings and figures below follow your active filters.</p>}
           <p className="lede">
             Strategy in one line: <b>stop paying for transactions, start paying for habits, and protect value, not demographics.</b>
           </p>
         </Card>
         <Card title="Data integrity check" subtitle="Read before quoting rupee figures">
           <div className="stats">
-            <div className="stat"><span>Rows analysed</span><b>{fmtInt(rows.length)}</b><small>14 columns, 0 nulls</small></div>
+            <div className="stat"><span>Rows analysed</span><b>{fmtInt(rows.length)}</b><small>14 columns validated{dropped ? ` · ${fmtInt(dropped)} invalid rows dropped` : ', no invalid rows'}</small></div>
             <div className="stat"><span>Implied spend &gt; income</span><b>{fmtPct(s.overSpend / rows.length, 0)}</b><small>{fmtInt(s.overSpend)} users</small></div>
           </div>
           <Callout tone="warn" title="Treat ₹ as an index">

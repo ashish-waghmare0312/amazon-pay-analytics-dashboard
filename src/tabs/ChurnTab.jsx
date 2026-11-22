@@ -8,22 +8,10 @@ import {
   churnRate, mean, sd, pearson, binProfile, zVsRest, groupBy, fmtPct, fmtInt, fmtNum,
   TIERS, GENDERS, NPS_BUCKETS, ENG_BUCKETS, AGE_BRACKETS, CB_TIERS, INCOME_Q, TENURE_BANDS,
 } from '../lib/data.js';
-import { welch, chiSquare, fmtP } from '../lib/stats.js';
+import { fmtP } from '../lib/stats.js';
+import { churnBattery, CHURN_FEATURES } from '../lib/analyses.js';
 import { PillContrast, SectionTitle, Concept, Sig } from '../components/narrative.jsx';
 
-const FEATURES = [
-  { k: 'age', label: 'Age' },
-  { k: 'income', label: 'Monthly income' },
-  { k: 'tenure', label: 'Tenure (months)' },
-  { k: 'prime', label: 'Prime member' },
-  { k: 'txns', label: 'Monthly transactions' },
-  { k: 'atv', label: 'Avg transaction value' },
-  { k: 'gmv', label: 'Implied monthly GMV' },
-  { k: 'cashback', label: 'Cashback used %' },
-  { k: 'engagement', label: 'App engagement' },
-  { k: 'support', label: 'Support contacts' },
-  { k: 'nps', label: 'NPS' },
-];
 
 const DIMS = [
   { k: 'tier', label: 'Tier' },
@@ -93,38 +81,14 @@ export default function ChurnTab({ rows }) {
     return { best, range, sig: all.filter((d) => Math.abs(d.z) >= 1.96 && d.n >= 30).length, total: all.length };
   }, [splits, rows, base]);
 
-  const profile = useMemo(() => {
-    const act = rows.filter((r) => !r.churned);
-    const ch = rows.filter((r) => r.churned);
-    return FEATURES.map(({ k, label }) => {
-      const w = welch(act, ch, k);
-      const denom = Math.abs(w.ma) < 1e-9 ? 1 : Math.abs(w.ma);
-      return {
-        k, label, active: w.ma, churned: w.mb,
-        diffPct: k === 'nps' ? w.mb - w.ma : ((w.mb - w.ma) / denom) * 100,
-        t: w.t, p: w.p, d: w.d,
-      };
-    });
-  }, [rows]);
-
-  const chi = useMemo(() => [
-    { label: 'City tier', fn: (r) => r.tier, order: TIERS },
-    { label: 'Gender', fn: (r) => r.gender, order: GENDERS },
-    { label: 'Prime status', fn: (r) => r.primeLabel, order: ['Prime', 'Non-Prime'] },
-    { label: 'Age bracket', fn: (r) => r.ageB, order: AGE_BRACKETS },
-    { label: 'Income quartile', fn: (r) => r.incQ, order: INCOME_Q },
-    { label: 'Tenure band', fn: (r) => r.tenB, order: TENURE_BANDS },
-    { label: 'Engagement bucket', fn: (r) => r.engB, order: ENG_BUCKETS },
-    { label: 'NPS bucket', fn: (r) => r.npsB, order: NPS_BUCKETS },
-    { label: 'Support contacts (0–9)', fn: (r) => r.support },
-    { label: 'Cashback tier', fn: (r) => r.cbT, order: CB_TIERS },
-  ].map((c) => ({ ...c, ...chiSquare(rows, c.fn, c.order) })), [rows]);
-  const sigCount = profile.filter((d) => d.p < 0.05).length + chi.filter((c) => c.p < 0.05).length;
+  const battery = useMemo(() => churnBattery(rows), [rows]);
+  const { profile, chi } = battery;
+  const sigCount = battery.sig.length;
   const hasBoth = rows.some((r) => r.churned) && rows.some((r) => !r.churned);
 
   const importance = useMemo(() => {
     const sigR = 1.96 / Math.sqrt(rows.length);
-    const list = FEATURES.map(({ k, label }) => {
+    const list = CHURN_FEATURES.map(({ k, label }) => {
       const r = pearson(rows, k, 'churned');
       const { spread, mi } = binProfile(rows, k);
       return { label, r, absR: Math.abs(r), spread, mi };
@@ -146,12 +110,12 @@ export default function ChurnTab({ rows }) {
 
   return (
     <>
-      <SectionTitle title="Q1 · What drives churn?">
+      <SectionTitle title="Q1 · What factors most strongly influence customer churn?">
         Columns: <code>Churned</code> vs <code>Tenure months</code>, <code>App engagement score</code>, <code>Customer support contacts</code>, <code>Net promoter score</code>, <code>City tier</code>, <code>Age</code>, <code>Monthly income inr</code>. Methods: Wilson CIs, Welch t, χ² independence, point-biserial r, bin spread, 2–3-way pocket scan.
       </SectionTitle>
       <PillContrast
         blue={<>“Churners are the disengaged, unhappy, high-support users. Fix NPS and support and churn falls.” The textbook <Concept name="Habit Loop">broken-habit-loop</Concept> story.</>}
-        red={<>In this sample, <b>{sigCount === 0 ? 'none' : `only ${sigCount}`}</b> of {profile.length + chi.length} tests reach p &lt; .05. Churned users have the same engagement, NPS, support load, tenure and income as active ones. Churn is <b>event-driven, not profile-driven</b>: the trigger (a failed UPI payment, a rival's cashback, an unresolved refund) is not in the CSV. Targeting by demographics is <Concept name="Red Pill vs Blue Pill">blue-pill</Concept> comfort.</>}
+        red={<>In {rows.length === 5000 ? 'this sample' : 'this filtered view'}, <b>{sigCount === 0 ? 'none' : `only ${sigCount}`}</b> of {battery.total} tests reach p &lt; .05{sigCount > 0 ? <> ({battery.sig.map((x) => x.label).join(', ')}; ~{fmtNum(battery.total * 0.05, 0)} false positive{Math.round(battery.total * 0.05) === 1 ? ' is' : 's are'} expected by chance{battery.bonf.length ? <>, but <b>{battery.bonf.map((x) => x.label).join(', ')}</b> survive{battery.bonf.length === 1 ? 's' : ''} Bonferroni correction and merit{battery.bonf.length === 1 ? 's' : ''} a closer look in this segment</> : ', so treat them as hypotheses'})</> : ''}. {sigCount === 0 ? 'Churned users have the same engagement, NPS, support load, tenure and income as active ones.' : 'Everything else looks the same for churned and active users.'} Churn is <b>event-driven, not profile-driven</b>: the trigger (a failed UPI payment, a rival's cashback, an unresolved refund) is not in the CSV. Targeting by demographics is <Concept name="Red Pill vs Blue Pill">blue-pill</Concept> comfort.</>}
       />
       <div className="grid g3">
         {splits.map((s) => (
@@ -162,7 +126,7 @@ export default function ChurnTab({ rows }) {
       </div>
       {!Number.isNaN(base) && rows.some((r) => r.churned) && (
         <Callout tone="info" title="Reading the splits">
-          Every split sits within ±{(splitInsight.range * 100).toFixed(1)} pp of the {fmtPct(base)} average, and the 95% intervals (hover a bar) mostly overlap it.
+          Every split sits within ±{(splitInsight.range * 100).toFixed(1)} pp of the {fmtPct(base)} average{splitInsight.sig === 0 ? ', and every 95% interval (hover a bar) is consistent with it' : ''}.
           The biggest gap is <b>{splitInsight.best?.name}</b> ({splitInsight.best?.split.replace('By ', '')}) at {fmtPct(splitInsight.best?.rate)} on n = {fmtInt(splitInsight.best?.n)} (z = {fmtNum(splitInsight.best?.z, 2)}).{' '}
           {splitInsight.sig === 0
             ? 'No single demographic or behavioural group is significantly different from the rest at the 95% level, so churn can’t be pinned on one attribute.'
@@ -268,7 +232,7 @@ export default function ChurnTab({ rows }) {
           <Callout tone="info" title="Where non-linearity shows up">
             <b>{topSpread?.label}</b> has the widest swing across its bins ({(topSpread?.spread * 100).toFixed(1)} pp) even though its |r| is {topSpread?.absR.toFixed(3)}.
             A swing this size with no linear trend means some ranges of the feature run hotter than others without a steady direction.
-            Bins hold about 1,000 customers each, so a ±2–3 pp swing is within sampling noise. Use the pocket table below to find combinations that stand out.
+            Bins hold about {fmtInt(rows.length / 5)} customers each, so a swing under ±{fmtNum(196 * Math.sqrt((base * (1 - base)) / Math.max(1, rows.length / 5)), 1)} pp is within sampling noise. Use the pocket table below to find combinations that stand out.
           </Callout>
         </Card>
       </div>

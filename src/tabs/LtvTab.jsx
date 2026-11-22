@@ -30,9 +30,10 @@ export const forwardValue = (marginPerYear, churn, years) => {
   return v;
 };
 
-export default function LtvTab({ rows }) {
-  const [take, setTake] = useState(0.6);
-  const [cbRate, setCbRate] = useState(0.4);
+export default function LtvTab({ rows, assume, setAssume }) {
+  const { take, cbRate } = assume;
+  const upd = (k) => (v) => setAssume((a) => ({ ...a, [k]: v }));
+  const setTake = upd('take'), setCbRate = upd('cbRate');
   const [years, setYears] = useState(3);
   const [rowDim, setRowDim] = useState('tier');
   const [colDim, setColDim] = useState('ageB');
@@ -114,11 +115,12 @@ export default function LtvTab({ rows }) {
   }, [rows, T, CB]);
 
   const sigAnova = anovas.filter((a) => a.p < 0.05);
+  const demoSimilar = (() => { const d1x = pareto.deciles[0], d10x = pareto.deciles[9]; return Math.abs(d1x.income / d10x.income - 1) < 0.1 && Math.abs(d1x.prime - d10x.prime) < 0.1 && Math.abs(d1x.churn - d10x.churn) < 0.05; })();
   const d1 = pareto.deciles[0], d10 = pareto.deciles[9];
 
   return (
     <>
-      <SectionTitle title="Q3 · Which segments deliver the highest lifetime value?">
+      <SectionTitle title="Q3 · Which customer segments deliver the highest lifetime value?">
         LTV proxy = <code>Avg monthly transactions</code> × <code>Avg transaction value inr</code> × <code>Tenure months</code> (cumulative ₹ throughput). Forward value applies a take-rate and cashback-cost scenario with segment churn as attrition. Methods: Pareto/Lorenz & Gini, decile profiling, one-way ANOVA (η²), segment heatmaps.
       </SectionTitle>
       <PillContrast
@@ -129,7 +131,7 @@ export default function LtvTab({ rows }) {
       <div className="grid g4">
         {[
           { l: 'Top 10% share of LTV pool', v: fmtPct(pareto.top10), s: 'Whales: protect at all costs' },
-          { l: 'Top 20% share of LTV pool', v: fmtPct(pareto.top20), s: 'Pareto 20/58, not 20/80' },
+          { l: 'Top 20% share of LTV pool', v: fmtPct(pareto.top20), s: `Pareto 20/${Math.round(pareto.top20 * 100)}${pareto.top20 < 0.75 ? ', not 20/80' : ''}` },
           { l: 'Gini coefficient (LTV)', v: fmtNum(pareto.gini, 3), s: '0 = equal · 1 = one customer holds all' },
           { l: 'Top-decile vs bottom-decile LTV', v: `${fmtNum(d1.ltv / d10.ltv, 0)}×`, s: `${fmtINRShort(d1.ltv)} vs ${fmtINRShort(d10.ltv)}` },
         ].map((k) => (
@@ -152,7 +154,7 @@ export default function LtvTab({ rows }) {
           </ResponsiveContainer>
         </Card>
 
-        <Card title="What builds LTV? Correlation with the LTV proxy" subtitle="Pearson r. Behaviour (frequency, ticket, tenure) carries value; demographics carry none.">
+        <Card title="What builds LTV? Correlation with the LTV proxy" subtitle="Pearson r. Blue = the three LTV components (correlated by construction); grey = every other attribute.">
           <ResponsiveContainer width="100%" height={270}>
             <BarChart data={drivers} layout="vertical" margin={{ top: 4, right: 40, left: 10, bottom: 18 }}>
               <CartesianGrid horizontal={false} />
@@ -211,8 +213,8 @@ export default function LtvTab({ rows }) {
         </div>
         <Callout tone="info" title="Behaviour, not birth certificate">
           D1 transacts {fmtNum(d1.txns / d10.txns, 1)}× as often as D10, at {fmtNum(d1.atv / d10.atv, 1)}× the ticket and {fmtNum(d1.tenure / d10.tenure, 1)}× the tenure,
-          yet their income (≈{fmtINRShort(d1.income)} vs {fmtINRShort(d10.income)}), Prime share ({fmtPct(d1.prime, 0)} vs {fmtPct(d10.prime, 0)}) and churn ({fmtPct(d1.churn)} vs {fmtPct(d10.churn)}) are near-identical.
-          Whales churn at the same rate as minnows, so <b>each lost whale costs ~{fmtNum(d1.ltv / mean(rows, 'ltv'), 1)}× an average customer</b>. Retention spend should be <b>value-weighted</b>, not demographic.
+          while their income (≈{fmtINRShort(d1.income)} vs {fmtINRShort(d10.income)}), Prime share ({fmtPct(d1.prime, 0)} vs {fmtPct(d10.prime, 0)}) and churn ({fmtPct(d1.churn)} vs {fmtPct(d10.churn)}) {demoSimilar ? 'are near-identical' : 'differ, but far less than behaviour does'}.
+          {Math.abs(d1.churn - d10.churn) < 0.05 ? 'Whales churn at about the same rate as minnows, so' : 'Whatever the churn gap,'} <b>each lost whale costs ~{fmtNum(d1.ltv / mean(rows, 'ltv'), 1)}× an average customer</b>. Retention spend should be <b>value-weighted</b>, not demographic.
         </Callout>
       </Card>
 
@@ -284,7 +286,7 @@ export default function LtvTab({ rows }) {
           <Callout tone={sigAnova.length ? 'info' : 'warn'} title="Verdict">
             {sigAnova.length
               ? <>Significant: {sigAnova.map((a) => a.label).join(', ')}, but each explains under {fmtPct(Math.max(...sigAnova.map((a) => a.eta2)), 1)} of LTV variance. Statistically real, commercially small.</>
-              : <>No segment dimension explains LTV (all p ≥ .05, smallest p = {fmtP(Math.min(...anovas.map((a) => a.p)))}). Tier 1 edges ahead in raw means, but the gap is within noise. The highest-value “segment” is a <b>behavioural cohort</b>: the top-2 LTV deciles.</>}
+              : <>No segment dimension explains LTV (all p ≥ .05, smallest p = {fmtP(Math.min(...anovas.map((a) => a.p)))}). {(() => { const g = anovas.flatMap((a) => a.groups.map((x) => ({ ...x, dim: a.label }))).sort((x, y) => y.mean - x.mean)[0]; return g ? `${g.key} (${g.dim}) has the highest raw mean, but the gap is within noise.` : ''; })()} The highest-value “segment” is a <b>behavioural cohort</b>: the top-2 LTV deciles.</>}
           </Callout>
 
           <h4 style={{ margin: '16px 0 8px', fontSize: 13.5 }}>Unit-economics scenario <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}>(assumptions, not CSV facts)</span></h4>

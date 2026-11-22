@@ -3,7 +3,7 @@
 An interactive case-competition dashboard answering the five Amazon Pay India case questions from a 5,000-customer dataset. It uses **data analytics only**: descriptive and inferential statistics, segmentation, Pareto/decile analysis and scenario levers. There are no ML models.
 
 - **Stack:** React 18 + Vite 5 + Recharts. Everything is static and client-side. The CSV is embedded at build time (`src/data/amazon_pay_india.csv`), so there are no runtime fetches or missing assets.
-- **Every number is live.** Every chart, test and simulator recomputes from the rows that match the filter bar (City tier, Prime, Gender, Age, Income quartile, Churn status).
+- **Every number is live.** Every chart, test and simulator recomputes from the rows that match the filter bar (City tier, Prime, Gender, Age, Income quartile, Churn status). Scenario assumptions (take rate, cashback %, persona thresholds) are shared, so changing one on any tab updates every tab.
 - **Two labelled sources:** blue tags mark *5,000-User Sample Analytics* (from the CSV). Green tags mark *Macro / Industry Context* (external, approximate, as of 2025).
 - **Bring your own CSV:** the **Upload CSV** button re-runs the full analysis on any file with the same 14 columns.
 
@@ -23,7 +23,7 @@ An interactive case-competition dashboard answering the five Amazon Pay India ca
 
 | | Blue pill (comfortable story) | Red pill (tested result) |
 |---|---|---|
-| Q1 | Disengaged, unhappy, high-support users churn | 0 of 13 Welch/χ² tests significant (smallest p ≈ 0.052, Gender). Churn ≈ 19% in every segment, so it is **event-driven, not profile-driven** |
+| Q1 | Disengaged, unhappy, high-support users churn | 0 of 21 Welch/χ² tests significant (smallest p ≈ 0.052, Gender). The only standout single group is Gender = Other (27.8% churn, but n = 97). Churn ≈ 19% elsewhere, so it is **event-driven, not profile-driven** |
 | Q2 | Prime's sunk-cost moat lifts Pay usage and loyalty | Prime: 74.8 vs 76.5 txns/mo (p = 0.16); churn 19.7% vs 18.4% (p = 0.27). The carrot-and-stick lands on shopping, **not on the wallet** |
 | Q3 | Tier-1, affluent, Prime users carry value | Top 20% of users = **58%** of LTV (Gini ≈ 0.57), but no segment ANOVA is significant (η² < 0.2%). Value is **behavioural, not demographic** |
 | Q4 | Cashback builds habits | All \|r\| < 0.02 with frequency, ticket, engagement and churn. Cashback is consumed as "free money" (**mental accounting**) and buys ~zero behaviour |
@@ -50,6 +50,7 @@ amazon-pay-analytics-dashboard/
 │   ├── lib/
 │   │   ├── data.js           # CSV parser, schema mapping, derived fields, filters
 │   │   ├── stats.js          # Welch t, χ², ANOVA, z-tests, quantiles, p-values
+│   │   ├── analyses.js       # shared churn test battery + default assumptions
 │   │   └── lexicon.js        # behavioural-economics glossary
 │   ├── components/
 │   │   ├── ui.jsx            # cards, sliders, segmented controls, tooltips
