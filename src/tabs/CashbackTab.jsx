@@ -102,9 +102,10 @@ export default function CashbackTab({ rows, assume, setAssume }) {
         red={<>Across ten cashback-utilisation bands, average monthly transactions vary by only <b>{fmtNum(txnSpread, 1)}</b> (max − min), and {sigOutcomes.length === 0 ? 'none' : sigOutcomes.length} of {tierTests.length} outcomes differ significantly across cashback tiers (all |r| ≤ {Math.max(...tierTests.map((t) => Math.abs(t.r))).toFixed(3)}). This is an <b>association</b> in observational data: it does not prove cashback has no causal effect (heavy users may differ in ways the CSV doesn't record). It is consistent with cashback being consumed as <Concept name="Mental Accounting">“free money”</Concept> under <Concept name="Diminishing Marginal Utility" />; only a randomised test can show what the marginal rupee buys.</>}
       />
 
-      <div className="grid g2">
-        <Card title="Dose–response: cashback utilisation vs behaviour" subtitle="Each point = customers in a 10-pt band of Cashback used pct. A real driver slopes upward; a subsidy runs flat.">
-          <ResponsiveContainer width="100%" height={250}>
+      <div className="grid g2 fill">
+        <Card className="flex" title="Dose–response: cashback utilisation vs behaviour" subtitle="Each point = customers in a 10-pt band of Cashback used pct. A real driver slopes upward; a subsidy runs flat.">
+          <div className="grow" style={{ minHeight: 250 }}>
+          <ResponsiveContainer width="100%" height="100%">
             <LineChart data={dose} margin={{ top: 10, right: 14, left: 4, bottom: 18 }}>
               <CartesianGrid vertical={false} />
               <XAxis dataKey="name" {...axisProps} interval={1} label={axisLabel('Cashback used pct band')} />
@@ -117,6 +118,7 @@ export default function CashbackTab({ rows, assume, setAssume }) {
               <Line dataKey="txns" stroke={C.s1} strokeWidth={2} dot={{ r: 4 }} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
+          </div>
           <Callout tone="warn" title="Flat line = no detectable association">
             The line stays within ±{fmtNum(txnSpread / 2, 1)} transactions of the mean across the whole range. A strong positive association would make the right side sit visibly higher. No detectable association in this sample; this is not a causal elasticity estimate.
           </Callout>

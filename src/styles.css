@@ -1,20 +1,24 @@
-/* Achromatic ledger (tasteskill app sheet, seed 361126669), face: a blue-grey ledger ground.
-   Chrome is ink; the one data hue (#1d5fbf) goes on the main series of each chart; nothing at rest is lifted.
+/* Palette taken from the case deck (presentation/Amazon_Pay_India_Case_Deck.pptx theme):
+   ground #0B0D09, card #181C14, line #3A4133, body #D9DED3, muted #A3A9A0, accent lime #C7F23E,
+   red #FF5C6C, amber #F2B33D. Dark is the default, as in the deck; lime goes on the main data and the one action.
+   Light mode keeps the deck's neutrals and moves the lime to a deeper olive so data marks hold 3:1 on white.
    Grid arithmetic at 1440: sidebar 240 + canvas padding 32 × 2 → content 1136.
    g2: 2 × 562 + 12 = 1136 · g3: 3 × 370.67 + 2 × 12 = 1136 · KPI strip: 4 columns × 284 = 1136. */
 :root {
-  color-scheme: light;
-  --ground: #f2f4f7;  --surface: #ffffff;  --raised: #f0f2f5;  --active: #e6e8ec;
-  --border: #e3e6ea;  --rule: #eef0f3;     --control: #d2d5da;
-  --text: #0a0a0a;    --muted: #5b6068;    --faint: #6b6f76;
-  --primary: #141414; --on-primary: #ffffff;
-  --data: #1d5fbf;    --data-2: #141414;   --data-3: #8a8a8a;
-  --positive: #24692a; --negative: #b8222a; --warning: #b7791f;
-  --pill-positive-bg: #dcfae5; --pill-positive-ink: #04250e;
-  --pill-negative-bg: #ffedea; --pill-negative-ink: #831c1e;
-  --pill-warning-bg: #fffbeb;  --pill-warning-ink: #92400e;
-  --pill-neutral-bg: #eceef1;  --pill-neutral-ink: #3d4148;
-  --grid-line: #e7e9ed;
+  color-scheme: dark;
+  --ground: #0b0d09; --surface: #181c14; --raised: #20251b; --active: #2a3024;
+  --border: #2a3024; --rule: #20251b;   --control: #3a4133;
+  --text: #f2f4ef;   --muted: #c3c8bd;  --faint: #a3a9a0;
+  --primary: #c7f23e; --on-primary: #0b0d09;
+  --data: #c7f23e;   --data-2: #d9ded3; --data-3: #6e7569;
+  --positive: #c7f23e; --negative: #ff5c6c; --warning: #f2b33d;
+  --pill-positive-bg: #26301a; --pill-positive-ink: #c7f23e;
+  --pill-negative-bg: #3a1b1f; --pill-negative-ink: #ff7a87;
+  --pill-warning-bg: #33290f;  --pill-warning-ink: #f2b33d;
+  --pill-neutral-bg: #2a3024;  --pill-neutral-ink: #d9ded3;
+  --grid-line: #262b20;
+  --seq-0: #1c2117; --seq-1: #2e3a16; --seq-2: #4a6019; --seq-3: #7a9e22; --seq-4: #a9d132; --seq-5: #c7f23e;
+  --seq-ink-1: #f2f4ef; --seq-ink-2: #f2f4ef; --seq-ink-3: #0b0d09; --seq-ink-4: #0b0d09; --seq-ink-5: #0b0d09;
   --radius-card: 8px; --radius-control: 6px; --radius-chip: 4px;
   --gap: 12px; --pad: 32px; --card-pad: 20px; --control-height: 34px;
   --font: "Geist", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -26,44 +30,42 @@
   --accent: var(--primary); --accent-ink: var(--on-primary);
   --series-1: var(--data); --series-2: var(--data-2); --series-3: var(--data-3);
   --div-neg: var(--data); --div-pos: var(--negative);
-  --seq-0: #eef1f5; --seq-1: #d6e2f5; --seq-2: #a9c3ea; --seq-3: #5b8fd6; --seq-4: #1d5fbf; --seq-5: #123c7a;
-  --seq-ink-1: #0a0a0a; --seq-ink-2: #0a0a0a; --seq-ink-3: #0a0a0a; --seq-ink-4: #ffffff; --seq-ink-5: #ffffff;
   --good: var(--positive); --good-ink: var(--positive); --critical: var(--negative);
   --shadow: none;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    color-scheme: dark;
-    --ground: #0e0f11; --surface: #16171a; --raised: #1e2023; --active: #26282c;
-    --border: #25272b; --rule: #1d1f22;   --control: #3a3d42;
-    --text: #f2f2f2;   --muted: #b4b4b4;  --faint: #9a9a9a;
-    --primary: #f2f2f2; --on-primary: #0e0f11;
-    --data: #6c9ce0;   --data-2: #e8e8e8; --data-3: #8f8f8f;
-    --positive: #4cc27a; --negative: #ef6b78; --warning: #e0a548;
-    --pill-positive-bg: #15281c; --pill-positive-ink: #4cc27a;
-    --pill-negative-bg: #2c1a1f; --pill-negative-ink: #ef6b78;
-    --pill-warning-bg: #2a2214;  --pill-warning-ink: #e0a548;
-    --pill-neutral-bg: #25272b;  --pill-neutral-ink: #cfcfcf;
-    --grid-line: #26282c;
-    --seq-0: #1b1d20; --seq-1: #16294a; --seq-2: #1d3f73; --seq-3: #2f5fa6; --seq-4: #6c9ce0; --seq-5: #b9d0f2;
-    --seq-ink-1: #f2f2f2; --seq-ink-2: #f2f2f2; --seq-ink-3: #ffffff; --seq-ink-4: #0a0a0a; --seq-ink-5: #0a0a0a;
-  }
+:root[data-theme="light"] {
+  color-scheme: light;
+  --ground: #f3f5ef; --surface: #ffffff; --raised: #eceee6; --active: #e2e6da;
+  --border: #dde1d5; --rule: #edefe8;   --control: #c6cbbd;
+  --text: #0b0d09;   --muted: #4f564a;  --faint: #5f665a;
+  --primary: #0b0d09; --on-primary: #c7f23e;
+  --data: #6b8f00;   --data-2: #0b0d09; --data-3: #8c9288;
+  --positive: #3f6212; --negative: #c42b3a; --warning: #9a5b00;
+  --pill-positive-bg: #eef8cf; --pill-positive-ink: #2b3a06;
+  --pill-negative-bg: #ffe8ea; --pill-negative-ink: #8a1c27;
+  --pill-warning-bg: #fdf3dc;  --pill-warning-ink: #7a4a00;
+  --pill-neutral-bg: #eceee6;  --pill-neutral-ink: #3a4133;
+  --grid-line: #e6e9e0;
+  --seq-0: #f1f4ea; --seq-1: #e1ecb8; --seq-2: #c9e07a; --seq-3: #a6c633; --seq-4: #7fa30f; --seq-5: #4f6a00;
+  --seq-ink-1: #0b0d09; --seq-ink-2: #0b0d09; --seq-ink-3: #0b0d09; --seq-ink-4: #0b0d09; --seq-ink-5: #ffffff;
 }
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --ground: #0e0f11; --surface: #16171a; --raised: #1e2023; --active: #26282c;
-  --border: #25272b; --rule: #1d1f22;   --control: #3a3d42;
-  --text: #f2f2f2;   --muted: #b4b4b4;  --faint: #9a9a9a;
-  --primary: #f2f2f2; --on-primary: #0e0f11;
-  --data: #6c9ce0;   --data-2: #e8e8e8; --data-3: #8f8f8f;
-  --positive: #4cc27a; --negative: #ef6b78; --warning: #e0a548;
-  --pill-positive-bg: #15281c; --pill-positive-ink: #4cc27a;
-  --pill-negative-bg: #2c1a1f; --pill-negative-ink: #ef6b78;
-  --pill-warning-bg: #2a2214;  --pill-warning-ink: #e0a548;
-  --pill-neutral-bg: #25272b;  --pill-neutral-ink: #cfcfcf;
-  --grid-line: #26282c;
-  --seq-0: #1b1d20; --seq-1: #16294a; --seq-2: #1d3f73; --seq-3: #2f5fa6; --seq-4: #6c9ce0; --seq-5: #b9d0f2;
-  --seq-ink-1: #f2f2f2; --seq-ink-2: #f2f2f2; --seq-ink-3: #ffffff; --seq-ink-4: #0a0a0a; --seq-ink-5: #0a0a0a;
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+    --ground: #f3f5ef; --surface: #ffffff; --raised: #eceee6; --active: #e2e6da;
+    --border: #dde1d5; --rule: #edefe8;   --control: #c6cbbd;
+    --text: #0b0d09;   --muted: #4f564a;  --faint: #5f665a;
+    --primary: #0b0d09; --on-primary: #c7f23e;
+    --data: #6b8f00;   --data-2: #0b0d09; --data-3: #8c9288;
+    --positive: #3f6212; --negative: #c42b3a; --warning: #9a5b00;
+    --pill-positive-bg: #eef8cf; --pill-positive-ink: #2b3a06;
+    --pill-negative-bg: #ffe8ea; --pill-negative-ink: #8a1c27;
+    --pill-warning-bg: #fdf3dc;  --pill-warning-ink: #7a4a00;
+    --pill-neutral-bg: #eceee6;  --pill-neutral-ink: #3a4133;
+    --grid-line: #e6e9e0;
+    --seq-0: #f1f4ea; --seq-1: #e1ecb8; --seq-2: #c9e07a; --seq-3: #a6c633; --seq-4: #7fa30f; --seq-5: #4f6a00;
+    --seq-ink-1: #0b0d09; --seq-ink-2: #0b0d09; --seq-ink-3: #0b0d09; --seq-ink-4: #0b0d09; --seq-ink-5: #ffffff;
+}
 }
 
 * { box-sizing: border-box; }
@@ -241,3 +243,17 @@ footer { color: var(--muted); font-size: 12px; line-height: 18px; margin-top: 24
   .card-actions { max-width: 100%; }
   .g5, .g6 { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Analysis screens: the eight headline figures in one row, so each screen's own blocks start higher. */
+.kpi-strip.compact { grid-template-columns: repeat(8, minmax(0, 1fr)); margin-bottom: 20px; }
+.kpi-strip.compact .kpi { padding: 10px 14px; }
+.kpi-strip.compact .kpi-label { font-size: 12px; }
+.kpi-strip.compact .kpi-value { font-size: 20px; line-height: 26px; }
+@media (max-width: 1280px) and (min-width: 641px) { .kpi-strip.compact { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .kpi-strip.compact { grid-template-columns: minmax(0, 1fr); } .kpi-strip.compact .kpi { padding: 8px 16px; } .kpi-strip.compact .kpi-value { font-size: 18px; line-height: 24px; } }
+
+/* Paired cards that share a row share a bottom edge: the chart grows, a source note sits at the foot. */
+.grid.fill { align-items: stretch; }
+.card.flex, .grid.fill > .macro { display: flex; flex-direction: column; }
+.card.flex > .grow { flex: 1 1 auto; }
+.grid.fill > .macro .macro-note { margin-top: auto; padding-top: 12px; }

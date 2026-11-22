@@ -80,9 +80,10 @@ export default function PrimeTab({ rows }) {
         ))}
       </div>
 
-      <div className="grid g2">
-        <Card title="Prime index by metric" subtitle="Prime mean ÷ Non-Prime mean × 100. 100 = parity; hover for the Welch test. NPS excluded (mean ≈ 0 makes a ratio meaningless; see table).">
-          <ResponsiveContainer width="100%" height={300}>
+      <div className="grid g2 fill">
+        <Card className="flex" title="Prime index by metric" subtitle="Prime mean ÷ Non-Prime mean × 100. 100 = parity; hover for the Welch test. NPS excluded (mean ≈ 0 makes a ratio meaningless; see table).">
+          <div className="grow" style={{ minHeight: 300 }}>
+          <ResponsiveContainer width="100%" height="100%">
             <BarChart data={indexData} layout="vertical" margin={{ top: 4, right: 40, left: 10, bottom: 18 }}>
               <CartesianGrid horizontal={false} />
               <XAxis type="number" {...axisProps} domain={[(min) => Math.floor(Math.min(min, 96)), (max) => Math.ceil(Math.max(max, 104))]} label={axisLabel('Index (Non-Prime = 100)')} />
@@ -102,7 +103,8 @@ export default function PrimeTab({ rows }) {
               </Bar>
             </BarChart>
           </ResponsiveContainer>
-                  <Callout tone="info" title="Reading it">
+          </div>
+          <Callout tone="info" title="Reading it">
             Every metric sits within {fmtNum(Math.max(...indexData.map((d) => Math.abs(d.index - 100))), 1)} points of parity, and {indexData.filter((d) => d.p < 0.05).length === 0 ? 'none differs significantly' : `${indexData.filter((d) => d.p < 0.05).length} differ significantly`} (Welch p, uncorrected). Prime and non-Prime customers use Amazon Pay at about the same frequency, ticket and engagement in this sample.
           </Callout>
         </Card>

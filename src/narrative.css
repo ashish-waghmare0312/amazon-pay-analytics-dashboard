@@ -78,3 +78,4 @@ code { font-size: 12px; background: var(--raised); padding: 1px 5px; border-radi
   .play { grid-template-columns: minmax(0, 1fr); }
   .finding { grid-template-columns: minmax(0, 1fr); gap: 4px; }
 }
+

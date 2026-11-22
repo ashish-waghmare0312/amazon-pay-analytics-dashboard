@@ -40,7 +40,7 @@ function useTheme() {
   const [theme, setTheme] = useState(() => {
     const forced = new URLSearchParams(location.search).get('theme'); // ?theme=light|dark for screenshots
     if (['light', 'dark', 'system'].includes(forced)) return forced;
-    try { return localStorage.getItem('apay-theme') || 'system'; } catch { return 'system'; }
+    try { return localStorage.getItem('apay-theme') || 'dark'; } catch { return 'dark'; }
   });
   useEffect(() => {
     const root = document.documentElement;
@@ -54,14 +54,14 @@ function useTheme() {
 function Mark() {
   return (
     <svg className="mark" viewBox="0 0 28 28" aria-hidden="true">
-      <rect width="28" height="28" rx="6" fill="var(--text)" />
-      <path d="M9 8h10M9 12h10M9 8c5 0 7 1.5 7 4s-2 4-7 4l8 6" fill="none" stroke="var(--surface)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <rect width="28" height="28" rx="6" fill="#c7f23e" />
+      <path d="M9 8h10M9 12h10M9 8c5 0 7 1.5 7 4s-2 4-7 4l8 6" fill="none" stroke="#0b0d09" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
 
 /** One divided strip of headline figures; deltas appear only when a filter is on, in grey unless churn worsens. */
-function KpiStrip({ rows, base }) {
+function KpiStrip({ rows, base, compact = false }) {
   const k = (a) => ({
     n: a.length, churn: churnRate(a), prime: mean(a, 'prime'), txns: mean(a, 'txns'),
     atv: mean(a, 'atv'), gmv: sum(a, 'gmv'), nps: mean(a, 'nps'), cb: mean(a, 'cashback'),
@@ -80,19 +80,19 @@ function KpiStrip({ rows, base }) {
     { label: 'Customers', value: fmtInt(cur.n), d: delta(cur.n, all.n, 'share') },
     { label: 'Churn rate', value: fmtPct(cur.churn), d: delta(cur.churn, all.churn, 'pp'), bad: filtered && cur.churn - all.churn > 0.0005 },
     { label: 'Prime members', value: fmtPct(cur.prime), d: delta(cur.prime, all.prime, 'pp') },
-    { label: 'Transactions a month', value: fmtNum(cur.txns), d: delta(cur.txns, all.txns) },
+    { label: 'Transactions a month', short: 'Txns a month', value: fmtNum(cur.txns), d: delta(cur.txns, all.txns) },
     { label: 'Average ticket', value: fmtINR(cur.atv), d: delta(cur.atv, all.atv) },
-    { label: 'Implied monthly GMV', value: fmtINRShort(cur.gmv), d: filtered ? delta(cur.gmv, all.gmv, 'share') : `${fmtINR(cur.gmv / cur.n)} per customer` },
+    { label: 'Implied monthly GMV', short: 'Monthly GMV', value: fmtINRShort(cur.gmv), d: filtered ? delta(cur.gmv, all.gmv, 'share') : `${fmtINR(cur.gmv / cur.n)} per customer` },
     { label: 'Mean NPS', value: fmtNum(cur.nps), d: delta(cur.nps, all.nps, 'abs') },
-    { label: 'Cashback utilisation', value: `${fmtNum(cur.cb)}%`, d: delta(cur.cb, all.cb, 'abs') },
+    { label: 'Cashback utilisation', short: 'Cashback used', value: `${fmtNum(cur.cb)}%`, d: delta(cur.cb, all.cb, 'abs') },
   ];
   return (
-    <section className="kpi-strip" aria-label="Headline figures for the current filter">
+    <section className={`kpi-strip${compact ? ' compact' : ''}`} aria-label="Headline figures for the current filter">
       {items.map((it) => (
         <div className="kpi" key={it.label}>
-          <span className="kpi-label">{it.label}</span>
+          <span className="kpi-label" title={it.label}>{compact && it.short ? it.short : it.label}</span>
           <b className="kpi-value num">{it.value}</b>
-          <small className={`kpi-delta${it.bad ? ' bad' : ''}${it.d ? '' : ' none'}`}>{it.d || ' '}</small>
+          <small className={`kpi-delta${it.bad ? ' bad' : ''}${it.d ? '' : ' none'}`} title={it.d || undefined}>{(compact && it.d ? it.d.replace(/ (vs|of) all customers$/, '').replace(/ per customer$/, '/cust') : it.d) || ' '}</small>
         </div>
       ))}
     </section>
@@ -220,7 +220,7 @@ export default function App() {
 
         {error && <div className="error-bar" role="alert">{error}<button className="btn text" onClick={() => setError(null)}>Dismiss</button></div>}
 
-        <KpiStrip rows={rows} base={dataset.rows} />
+        <KpiStrip rows={rows} base={dataset.rows} compact={tab !== 'summary'} />
 
         <main>
           {rows.length < 30 ? (
