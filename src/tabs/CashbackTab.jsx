@@ -109,7 +109,7 @@ export default function CashbackTab({ rows, assume, setAssume }) {
               <CartesianGrid vertical={false} />
               <XAxis dataKey="name" {...axisProps} interval={1} label={axisLabel('Cashback used pct band')} />
               <YAxis {...axisProps} domain={[0, 'auto']} width={44} label={axisLabel('Avg monthly transactions', 'y')} />
-              <ReferenceLine y={mean(rows, 'txns')} stroke="var(--text-secondary)" strokeDasharray="4 4" label={{ value: 'overall avg', position: 'insideBottomRight', fill: 'var(--text-secondary)', fontSize: 10.5 }} />
+              <ReferenceLine y={mean(rows, 'txns')} stroke="var(--text-secondary)" strokeDasharray="4 4" label={{ value: 'overall avg', position: 'insideBottomRight', fill: 'var(--text-secondary)', fontSize: 11 }} />
               <Tooltip content={<Tip build={(p) => {
                 const d = p[0].payload;
                 return [{ label: 'Avg txns / month', value: fmtNum(d.txns, 1), color: C.s1 }, { label: 'Engagement', value: fmtNum(d.eng, 2) }, { label: 'Churn', value: fmtPct(d.churn) }, { label: 'Customers', value: fmtInt(d.n) }];
@@ -135,9 +135,9 @@ export default function CashbackTab({ rows, assume, setAssume }) {
                   const b = bucket(cell.v);
                   return (
                     <div key={c} className="hc" title={`${e} × CB ${c}\n${HM.l}: ${HM.f(cell.v)}\nCustomers: ${cell.n}`}
-                      style={{ background: b < 0 ? 'var(--seq-0)' : SEQ[b], color: b >= 2 ? '#fff' : 'var(--text-primary)' }}>
+                      style={{ background: b < 0 ? 'var(--seq-0)' : SEQ[b], color: b < 0 ? 'var(--text-muted)' : `var(--seq-ink-${b + 1})` }}>
                       {Number.isFinite(cell.v) ? HM.f(cell.v) : '–'}
-                      <div style={{ fontSize: 10, fontWeight: 400, opacity: 0.8 }}>n={cell.n}</div>
+                      <div style={{ fontSize: 11, fontWeight: 400, opacity: 0.85 }}>n={cell.n}</div>
                     </div>
                   );
                 })}
@@ -165,7 +165,7 @@ export default function CashbackTab({ rows, assume, setAssume }) {
                   <YAxis {...axisProps} width={50} tickFormatter={(v) => (t.k === 'churned' ? `${Math.round(v * 100)}%` : t.k === 'atv' ? `${(v / 1000).toFixed(1)}K` : v.toFixed(0))} />
                   <Tooltip cursor={{ fill: 'var(--surface-2)' }} content={<Tip build={(p) => [{ label: t.label, value: t.fmt(p[0].value), color: C.s1 }, { label: 'Customers', value: fmtInt(p[0].payload.n) }]} />} />
                   <Bar dataKey="value" fill={C.s1} radius={[4, 4, 0, 0]} maxBarSize={36} isAnimationActive={false}>
-                    <LabelList dataKey="value" position="top" formatter={t.fmt} fill="var(--text-secondary)" fontSize={10} />
+                    <LabelList dataKey="value" position="top" formatter={t.fmt} fill="var(--text-secondary)" fontSize={11} />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -183,12 +183,13 @@ export default function CashbackTab({ rows, assume, setAssume }) {
             <Slider label="Cashback offered (% of GMV)" value={cbRate} min={0.1} max={2} step={0.05} onChange={setCbRate} format={(v) => `${v.toFixed(2)}%`} hint="Assumption used to cost cashback = GMV × offered % × used %." />
           </div>
           <ul className="assumptions">
-            {PERSONAS.slice(0, 4).map((p) => <li key={p.id}><b style={{ color: 'var(--text-primary)' }}>{p.name}:</b> {p.desc}</li>)}
+            {PERSONAS.slice(0, 4).map((p) => <li key={p.id}><b style={{ color: 'var(--text-primary)' }}>{p.name} (hypothesis):</b> {p.desc}</li>)}
+            <li>None of these segments is validated: the thresholds are chosen by hand, and moving them reshuffles who is in each.</li>
           </ul>
         </Card>
 
         <Card title="Utility-led vs mercenary: hypothesised personas" subtitle="Who receives the modelled cashback budget. Personas use hand-picked thresholds and are hypotheses, not validated segments.">
-          <ScenarioNote>Cashback ₹ cost is modelled as GMV × offered % × utilisation %. <code>Cashback used pct</code> in the CSV is the share of earned cashback utilised, not rupees spent.</ScenarioNote>
+          <ScenarioNote>Cashback ₹ cost is modelled as GMV × offered % × utilisation %. <code>Cashback used pct</code> in the CSV is the share of earned cashback utilised, not rupees spent. So “GMV per ₹1 of cashback” equals 1 ÷ (offered % × utilisation): it restates utilisation, not an independent finding.</ScenarioNote>
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={personas.filter((p) => p.n)} layout="vertical" margin={{ top: 0, right: 60, left: 10, bottom: 14 }}>
               <CartesianGrid horizontal={false} />
@@ -200,13 +201,13 @@ export default function CashbackTab({ rows, assume, setAssume }) {
               }} />} />
               <Bar dataKey="cost" radius={4} maxBarSize={18} isAnimationActive={false}>
                 {personas.filter((p) => p.n).map((p) => <Cell key={p.id} fill={p.color} />)}
-                <LabelList dataKey="cost" position="right" formatter={(v) => fmtPct(v / totalCost, 0)} fill="var(--text-secondary)" fontSize={10.5} />
+                <LabelList dataKey="cost" position="right" formatter={(v) => fmtPct(v / totalCost, 0)} fill="var(--text-secondary)" fontSize={11} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Persona</th><th>Users</th><th>Share</th><th>Txns/mo</th><th>Ticket</th><th>Avg throughput</th><th>Churn</th><th>NPS</th><th>CB cost/user/yr</th><th>GMV per ₹1 CB</th></tr></thead>
+              <thead><tr><th>Persona (hypothesis)</th><th>Users</th><th>Share</th><th>Txns/mo</th><th>Ticket</th><th>Avg throughput</th><th>Churn</th><th>NPS</th><th>CB cost/user/yr</th><th>GMV per ₹1 CB</th></tr></thead>
               <tbody>
                 {personas.map((p) => (
                   <tr key={p.id}>

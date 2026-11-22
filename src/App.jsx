@@ -3,7 +3,6 @@ import {
   EMBEDDED_CSV, loadDataset, applyFilters, DEFAULT_FILTERS, AGE_BRACKETS, INCOME_Q,
   mean, sum, churnRate, describeIssues, fmtInt, fmtPct, fmtNum, fmtINR, fmtINRShort,
 } from './lib/data.js';
-import { Segmented } from './components/ui.jsx';
 import { DEFAULT_ASSUMPTIONS } from './lib/analyses.js';
 import ChurnTab from './tabs/ChurnTab.jsx';
 import PrimeTab from './tabs/PrimeTab.jsx';
@@ -13,18 +12,34 @@ import OfferTab from './tabs/OfferTab.jsx';
 import SummaryTab from './tabs/SummaryTab.jsx';
 import BlueprintTab from './tabs/BlueprintTab.jsx';
 
-const TABS = [
-  { id: 'summary', label: 'Red Pill Summary', q: 'Executive synthesis: the comfortable averages vs the segmented truth' },
-  { id: 'churn', label: 'Churn & Risk', q: 'Q1 · What factors most strongly influence churn?' },
-  { id: 'prime', label: 'Prime & UPI', q: 'Q2 · How does Prime affect transaction frequency and loyalty?' },
-  { id: 'ltv', label: 'LTV Proxy & Segments', q: 'Q3 · Which customer segments deliver the highest lifetime value?' },
-  { id: 'cashback', label: 'Cashback Lab', q: 'Q4 · Is cashback driving real engagement or only deal-seeking?' },
-  { id: 'offers', label: 'Offer Strategy Lab', q: 'Q5 · How can Amazon Pay personalise offers to improve retention?' },
-  { id: 'blueprint', label: 'Blueprint', q: 'Question → columns → methods → behavioural lens' },
+// Each screen is its own hash route (#/churn), so the sidebar links to screens, not to anchors.
+const SCREENS = [
+  { id: 'summary', label: 'Summary', title: 'Summary' },
+  { id: 'churn', label: 'Churn and risk', title: 'Churn and risk' },
+  { id: 'prime', label: 'Prime and UPI', title: 'Prime and UPI' },
+  { id: 'ltv', label: 'LTV proxy and segments', title: 'LTV proxy and segments' },
+  { id: 'cashback', label: 'Cashback', title: 'Cashback' },
+  { id: 'offers', label: 'Offer strategy', title: 'Offer strategy' },
+  { id: 'blueprint', label: 'Method and blueprint', title: 'Method and blueprint' },
+];
+const screenFromHash = () => {
+  const id = (typeof location !== 'undefined' ? location.hash : '').replace(/^#\/?/, '');
+  return SCREENS.some((s) => s.id === id) ? id : 'summary';
+};
+
+const FILTERS = [
+  { key: 'tier', label: 'City tier', options: ['All', 'Tier 1', 'Tier 2', 'Tier 3'] },
+  { key: 'prime', label: 'Prime', options: ['All', 'Prime', 'Non-Prime'] },
+  { key: 'gender', label: 'Gender', options: ['All', 'Male', 'Female', 'Other'] },
+  { key: 'age', label: 'Age', options: ['All', ...AGE_BRACKETS] },
+  { key: 'inc', label: 'Income', options: ['All', ...INCOME_Q] },
+  { key: 'churn', label: 'Status', options: ['All', 'Active', 'Churned'] },
 ];
 
 function useTheme() {
   const [theme, setTheme] = useState(() => {
+    const forced = new URLSearchParams(location.search).get('theme'); // ?theme=light|dark for screenshots
+    if (['light', 'dark', 'system'].includes(forced)) return forced;
     try { return localStorage.getItem('apay-theme') || 'system'; } catch { return 'system'; }
   });
   useEffect(() => {
@@ -35,66 +50,73 @@ function useTheme() {
   return [theme, setTheme];
 }
 
+/** The product's mark: a rupee glyph on the ledger's ink square, drawn for this product. */
+function Mark() {
+  return (
+    <svg className="mark" viewBox="0 0 28 28" aria-hidden="true">
+      <rect width="28" height="28" rx="6" fill="var(--text)" />
+      <path d="M9 8h10M9 12h10M9 8c5 0 7 1.5 7 4s-2 4-7 4l8 6" fill="none" stroke="var(--surface)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** One divided strip of headline figures; deltas appear only when a filter is on, in grey unless churn worsens. */
 function KpiStrip({ rows, base }) {
   const k = (a) => ({
-    n: a.length,
-    churn: churnRate(a),
-    prime: mean(a, 'prime'),
-    txns: mean(a, 'txns'),
-    atv: mean(a, 'atv'),
-    gmv: sum(a, 'gmv'),
-    nps: mean(a, 'nps'),
-    cb: mean(a, 'cashback'),
+    n: a.length, churn: churnRate(a), prime: mean(a, 'prime'), txns: mean(a, 'txns'),
+    atv: mean(a, 'atv'), gmv: sum(a, 'gmv'), nps: mean(a, 'nps'), cb: mean(a, 'cashback'),
   });
-  const cur = k(rows);
-  const all = k(base);
+  const cur = k(rows), all = k(base);
   const filtered = rows.length !== base.length;
   const delta = (a, b, kind) => {
     if (!filtered || !Number.isFinite(a) || !Number.isFinite(b)) return null;
     const d = a - b;
-    if (kind === 'pp') return `${d >= 0 ? '+' : '−'}${Math.abs(d * 100).toFixed(1)} pp vs all`;
-    if (kind === 'abs') return `${d >= 0 ? '+' : '−'}${Math.abs(d).toFixed(1)} vs all`;
-    if (kind === 'share') return `${fmtPct(a / b)} of total`;
-    return `${d >= 0 ? '+' : '−'}${Math.abs((d / b) * 100).toFixed(1)}% vs all`;
+    if (kind === 'pp') return `${d >= 0 ? '+' : '−'}${Math.abs(d * 100).toFixed(1)} pp vs all customers`;
+    if (kind === 'abs') return `${d >= 0 ? '+' : '−'}${Math.abs(d).toFixed(1)} vs all customers`;
+    if (kind === 'share') return `${fmtPct(a / b)} of all customers`;
+    return `${d >= 0 ? '+' : '−'}${Math.abs((d / b) * 100).toFixed(1)}% vs all customers`;
   };
   const items = [
-    { label: 'Total Customers', value: fmtInt(cur.n), d: delta(cur.n, all.n, 'share') },
-    { label: 'Churn Rate', value: fmtPct(cur.churn), d: delta(cur.churn, all.churn, 'pp'), bad: filtered && cur.churn > all.churn },
-    { label: 'Prime Penetration', value: fmtPct(cur.prime), d: delta(cur.prime, all.prime, 'pp') },
-    { label: 'Avg Monthly Txns', value: fmtNum(cur.txns), d: delta(cur.txns, all.txns) },
-    { label: 'Avg Txn Value', value: fmtINR(cur.atv), d: delta(cur.atv, all.atv) },
-    { label: 'Implied Monthly GMV', value: fmtINRShort(cur.gmv), d: filtered ? delta(cur.gmv, all.gmv, 'share') : `${fmtINR(cur.gmv / cur.n)} per customer` },
+    { label: 'Customers', value: fmtInt(cur.n), d: delta(cur.n, all.n, 'share') },
+    { label: 'Churn rate', value: fmtPct(cur.churn), d: delta(cur.churn, all.churn, 'pp'), bad: filtered && cur.churn - all.churn > 0.0005 },
+    { label: 'Prime members', value: fmtPct(cur.prime), d: delta(cur.prime, all.prime, 'pp') },
+    { label: 'Transactions a month', value: fmtNum(cur.txns), d: delta(cur.txns, all.txns) },
+    { label: 'Average ticket', value: fmtINR(cur.atv), d: delta(cur.atv, all.atv) },
+    { label: 'Implied monthly GMV', value: fmtINRShort(cur.gmv), d: filtered ? delta(cur.gmv, all.gmv, 'share') : `${fmtINR(cur.gmv / cur.n)} per customer` },
     { label: 'Mean NPS', value: fmtNum(cur.nps), d: delta(cur.nps, all.nps, 'abs') },
-    { label: 'Avg Cashback Utilisation', value: `${fmtNum(cur.cb)}%`, d: delta(cur.cb, all.cb, 'abs') },
+    { label: 'Cashback utilisation', value: `${fmtNum(cur.cb)}%`, d: delta(cur.cb, all.cb, 'abs') },
   ];
   return (
-    <div className="kpis">
+    <section className="kpi-strip" aria-label="Headline figures for the current filter">
       {items.map((it) => (
         <div className="kpi" key={it.label}>
           <span className="kpi-label">{it.label}</span>
-          <b className="kpi-value">{it.value}</b>
-          <small className={it.bad ? 'kpi-delta bad' : 'kpi-delta'}>{it.d || ' '}</small>
+          <b className="kpi-value num">{it.value}</b>
+          <small className={`kpi-delta${it.bad ? ' bad' : ''}${it.d ? '' : ' none'}`}>{it.d || ' '}</small>
         </div>
       ))}
-    </div>
+    </section>
   );
 }
 
 export default function App() {
   const [theme, setTheme] = useTheme();
-  const [source, setSource] = useState({ name: 'Embedded dataset (5,000 customers)', text: EMBEDDED_CSV });
+  const [source, setSource] = useState({ name: 'Embedded dataset', text: EMBEDDED_CSV });
   const [error, setError] = useState(null);
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [assume, setAssume] = useState(DEFAULT_ASSUMPTIONS);
-  const [tab, setTab] = useState(() => {
-    try { const t = localStorage.getItem('apay-tab'); return TABS.some((x) => x.id === t) ? t : 'summary'; } catch { return 'summary'; }
-  });
+  const [tab, setTabState] = useState(screenFromHash);
+  const [navOpen, setNavOpen] = useState(false);
   const fileRef = useRef(null);
 
-  useEffect(() => { try { localStorage.setItem('apay-tab', tab); } catch { /* ignore */ } }, [tab]);
+  useEffect(() => {
+    const onHash = () => { setTabState(screenFromHash()); setNavOpen(false); window.scrollTo(0, 0); };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+  const setTab = (id) => { if (location.hash !== `#/${id}`) location.hash = `/${id}`; };
 
   const dataset = useMemo(() => {
-    // Uploads are validated before they reach here; this guards the embedded fallback path.
     try { return loadDataset(source.text); } catch { return loadDataset(EMBEDDED_CSV); }
   }, [source]);
 
@@ -119,78 +141,108 @@ export default function App() {
     e.target.value = '';
   };
 
-  const current = TABS.find((t) => t.id === tab) || TABS[0];
+  const current = SCREENS.find((t) => t.id === tab) || SCREENS[0];
   const props = { rows, base: dataset.rows, filters, assume, setAssume, dropped: dataset.dropped, issues: dataset.issues, isFiltered: rows.length !== dataset.rows.length };
+  const scope = rows.length === dataset.rows.length
+    ? `All ${fmtInt(dataset.rows.length)} customers`
+    : `${fmtInt(rows.length)} of ${fmtInt(dataset.rows.length)} customers, ${activeFilters} filter${activeFilters > 1 ? 's' : ''} on`;
 
   return (
-    <div className="app">
-      <header className="topbar">
-        <div className="brand">
-          <div className="logo" aria-hidden>₹</div>
-          <div>
-            <h1>Amazon Pay India · Red Pill Analytics</h1>
-            <p>5,000-customer case study · churn, Prime, LTV, cashback & offer strategy</p>
-          </div>
-        </div>
-        <div className="top-actions">
-          <span className="source" title={dataset.dropped ? `${source.name}: dropped ${describeIssues(dataset.issues)}` : source.name}>
-            <i className="dot" /> {source.name} · {fmtInt(dataset.rows.length)} rows{dataset.dropped ? ` · ${dataset.dropped} dropped` : ''}
-          </span>
-          <input ref={fileRef} type="file" accept=".csv,text/csv" hidden onChange={onFile} />
-          <button className="btn" onClick={() => fileRef.current?.click()}>Upload CSV</button>
-          {source.text !== EMBEDDED_CSV && (
-            <button className="btn ghost" onClick={() => { setSource({ name: 'Embedded dataset (5,000 customers)', text: EMBEDDED_CSV }); setError(null); }}>
-              Reset data
-            </button>
-          )}
-          <Segmented value={theme} onChange={setTheme} options={[{ value: 'light', label: '☀' }, { value: 'system', label: 'Auto' }, { value: 'dark', label: '☾' }]} />
-        </div>
+    <div className={`shell${navOpen ? ' nav-open' : ''}`}>
+      <header className="phone-bar">
+        <Mark />
+        <span className="phone-title">{current.title}</span>
+        <button className="btn ghost" aria-expanded={navOpen} aria-controls="side" onClick={() => setNavOpen((o) => !o)}>
+          {navOpen ? 'Close' : activeFilters ? `Menu · ${activeFilters} filter${activeFilters > 1 ? 's' : ''}` : 'Menu'}
+        </button>
       </header>
 
-      {error && <div className="error-bar" role="alert">{error}<button onClick={() => setError(null)} aria-label="Dismiss">×</button></div>}
+      <aside className="side" id="side">
+        <div className="side-brand">
+          <Mark />
+          <div>
+            <b>Amazon Pay India</b>
+            <span>Customer analytics case</span>
+          </div>
+        </div>
 
-      <div className="filterbar">
-        <Segmented label="City tier" value={filters.tier} onChange={set('tier')} options={['All', 'Tier 1', 'Tier 2', 'Tier 3']} />
-        <Segmented label="Prime" value={filters.prime} onChange={set('prime')} options={['All', 'Prime', 'Non-Prime']} />
-        <Segmented label="Gender" value={filters.gender} onChange={set('gender')} options={['All', 'Male', 'Female', 'Other']} />
-        <Segmented label="Age" value={filters.age} onChange={set('age')} options={['All', ...AGE_BRACKETS]} />
-        <Segmented label="Income" value={filters.inc} onChange={set('inc')} options={['All', ...INCOME_Q.map((q) => ({ value: q, label: q.split(' ')[0] }))]} />
-        <Segmented label="Status" value={filters.churn} onChange={set('churn')} options={['All', 'Active', 'Churned']} />
-        {activeFilters > 0 && (
-          <button className="btn ghost small" onClick={() => setFilters(DEFAULT_FILTERS)}>Clear {activeFilters} filter{activeFilters > 1 ? 's' : ''}</button>
-        )}
+        <div className="side-scope" title={dataset.dropped ? `${source.name}: dropped ${describeIssues(dataset.issues)}` : source.name}>
+          <span className="side-label">Dataset</span>
+          <b className="num">{source.name} · {fmtInt(dataset.rows.length)} rows</b>
+          {dataset.dropped > 0 && <small>{dataset.dropped} invalid rows dropped</small>}
+          <div className="side-actions">
+            <input ref={fileRef} type="file" accept=".csv,text/csv" hidden onChange={onFile} />
+            <button className="btn ghost" onClick={() => fileRef.current?.click()}>Upload CSV</button>
+            {source.text !== EMBEDDED_CSV && (
+              <button className="btn text" onClick={() => { setSource({ name: 'Embedded dataset', text: EMBEDDED_CSV }); setError(null); }}>Reset</button>
+            )}
+          </div>
+        </div>
+
+        <nav className="side-nav" aria-label="Screens">
+          {SCREENS.map((t) => (
+            <a key={t.id} href={`#/${t.id}`} className={tab === t.id ? 'on' : ''} aria-current={tab === t.id ? 'page' : undefined}>{t.label}</a>
+          ))}
+        </nav>
+
+        <div className="side-filters" role="group" aria-label="Filters">
+          <div className="side-filter-head">
+            <span className="side-label">Filters</span>
+            {activeFilters > 0 && <button className="btn text" onClick={() => setFilters(DEFAULT_FILTERS)}>Clear {activeFilters}</button>}
+          </div>
+          {FILTERS.map((f) => (
+            <label key={f.key} className="side-filter">
+              <span>{f.label}</span>
+              <select value={filters[f.key]} onChange={(e) => set(f.key)(e.target.value)} className={filters[f.key] !== 'All' ? 'set' : ''}>
+                {f.options.map((o) => <option key={o} value={o}>{o === 'All' ? `All` : o}</option>)}
+              </select>
+            </label>
+          ))}
+        </div>
+
+        <div className="side-foot">
+          <span className="side-label">Theme</span>
+          <div className="seg" role="radiogroup" aria-label="Theme">
+            {[['light', 'Light'], ['system', 'Auto'], ['dark', 'Dark']].map(([v, l]) => (
+              <button key={v} role="radio" aria-checked={theme === v} className={theme === v ? 'on' : ''} onClick={() => setTheme(v)}>{l}</button>
+            ))}
+          </div>
+        </div>
+      </aside>
+
+      <div className="canvas">
+        <div className="title-row">
+          <div>
+            <h1>{current.title}</h1>
+            <p>{scope}. Every figure below recomputes from these rows.</p>
+          </div>
+        </div>
+
+        {error && <div className="error-bar" role="alert">{error}<button className="btn text" onClick={() => setError(null)}>Dismiss</button></div>}
+
+        <KpiStrip rows={rows} base={dataset.rows} />
+
+        <main>
+          {rows.length < 30 ? (
+            <div className="empty">Only {rows.length} customers match these filters, too few for reliable analysis. Loosen a filter to continue.</div>
+          ) : (
+            <>
+              {tab === 'summary' && <SummaryTab {...props} goTo={setTab} />}
+              {tab === 'churn' && <ChurnTab {...props} />}
+              {tab === 'prime' && <PrimeTab {...props} />}
+              {tab === 'ltv' && <LtvTab {...props} />}
+              {tab === 'cashback' && <CashbackTab {...props} />}
+              {tab === 'offers' && <OfferTab {...props} />}
+              {tab === 'blueprint' && <BlueprintTab {...props} />}
+            </>
+          )}
+        </main>
+        <footer>
+          Sample tags mark figures computed live from the CSV and the filters; macro tags mark external market context (approximate, as of 2025); scenario tags mark outputs that follow from stated assumptions.
+          Implied monthly GMV = monthly transactions × average ticket. Throughput proxy = GMV × tenure: cumulative transaction value, not profit or true lifetime value. Cashback utilisation % is not rupee spend.
+          Scenario maths converts the churn flag to annual attrition under an assumed observation window, which the CSV does not state.
+        </footer>
       </div>
-
-      <KpiStrip rows={rows} base={dataset.rows} />
-
-      <nav className="tabs" role="tablist">
-        {TABS.map((t, i) => (
-          <button key={t.id} role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)}>
-            <span className="tab-n">{i + 1}</span>{t.label}
-          </button>
-        ))}
-      </nav>
-      {tab === 'summary' || tab === 'blueprint' ? <p className="tab-q">{current.q}</p> : <div style={{ height: 6 }} />}
-
-      <main>
-        {rows.length < 30 ? (
-          <div className="empty">Only {rows.length} customers match these filters — too few for reliable analysis. Loosen a filter to continue.</div>
-        ) : (
-          <>
-            {tab === 'summary' && <SummaryTab {...props} goTo={setTab} />}
-            {tab === 'churn' && <ChurnTab {...props} />}
-            {tab === 'prime' && <PrimeTab {...props} />}
-            {tab === 'ltv' && <LtvTab {...props} />}
-            {tab === 'cashback' && <CashbackTab {...props} />}
-            {tab === 'offers' && <OfferTab {...props} />}
-            {tab === 'blueprint' && <BlueprintTab {...props} />}
-          </>
-        )}
-      </main>
-      <footer>
-        Blue tags = 5,000-User Sample Analytics (computed live from the CSV and filters). Green tags = Macro / Industry Context (external, approximate, as of 2025). Implied monthly GMV = avg monthly transactions × avg transaction value; throughput proxy = GMV × tenure. Scenario maths (amber tags) converts the churn flag to annual attrition under an assumed observation window; the CSV does not state one. Throughput proxy = cumulative transaction value, not profit or true lifetime value; cashback utilisation % is not rupee spend.
-        Simulator and calculator outputs are scenario estimates built on stated assumptions, not forecasts.
-      </footer>
     </div>
   );
 }

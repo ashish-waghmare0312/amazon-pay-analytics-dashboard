@@ -28,7 +28,7 @@ const ROWS = [
   {
     q: 'Q4 · Cashback: engagement or deal-seeking',
     cols: ['Cashback used pct', 'Avg monthly transactions', 'Avg transaction value inr', 'App engagement score', 'Churned', 'Net promoter score'],
-    methods: 'Dose–response by 10-pt cashback band (elasticity check); ANOVA / χ² across cashback tiers; Pearson r; engagement × reliance grid; rule-based personas (utility-led, subsidised, mercenary, dormant) with tunable thresholds; cashback cost and GMV per ₹1 of cashback by persona.',
+    methods: 'Dose–response by 10-pt cashback band (elasticity check); ANOVA / χ² across cashback tiers; Pearson r; engagement × reliance grid; hypothesised rule-based personas with hand-set thresholds, not validated segments (utility-led, subsidised, mercenary, dormant) with tunable thresholds; cashback cost and GMV per ₹1 of cashback by persona.',
     psych: ['Mental Accounting', 'Diminishing Marginal Utility', 'Mercenary vs Utility-led', 'Variable Ratio Reinforcement'],
     module: 'Cashback Lab',
   },
@@ -66,7 +66,7 @@ export default function BlueprintTab() {
         </div>
       </Card>
 
-      <div className="grid g2" style={{ marginTop: 14 }}>
+      <div className="grid" style={{ marginTop: 14 }}>
         <Card title="Method notes & guardrails">
           <ul className="assumptions" style={{ fontSize: 12.8, color: 'var(--text-secondary)' }}>
             <li><b>Significance:</b> p-values from Welch t (Satterthwaite df), Pearson χ² (no Yates correction), one-way ANOVA F; computed in-browser from the filtered rows.</li>

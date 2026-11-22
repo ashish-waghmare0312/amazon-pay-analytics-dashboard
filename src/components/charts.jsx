@@ -17,12 +17,15 @@ export function rateRows(rows, fn, order) {
 /** Single-series churn-rate bar chart with a dashed baseline reference. */
 export function RateBarChart({ data, baseline, xLabel, height = 210, color = C.s1, yLabel = 'Churn rate' }) {
   const max = Math.max(baseline || 0, ...data.map((d) => d.hi || d.rate));
+  const step = max > 0.4 ? 0.1 : 0.05;
+  const top = Math.min(1, Math.ceil((max + 0.001) / step) * step);
+  const ticks = Array.from({ length: Math.round(top / step) + 1 }, (_, i) => +(i * step).toFixed(2));
   return (
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={{ top: 18, right: 8, left: 4, bottom: 18 }} barCategoryGap="24%">
         <CartesianGrid vertical={false} />
-        <XAxis dataKey="name" {...axisProps} interval={0} fontSize={11} label={axisLabel(xLabel)} />
-        <YAxis {...axisProps} tickFormatter={(v) => `${Math.round(v * 100)}%`} domain={[0, Math.min(1, Math.ceil(max * 20) / 20 + 0.05)]} width={44} label={axisLabel(yLabel, 'y')} />
+        <XAxis dataKey="name" {...axisProps} interval={0} fontSize={11} label={axisLabel(Number.isFinite(baseline) ? `${xLabel} · dashed line = average ${fmtPct(baseline)}` : xLabel)} />
+        <YAxis {...axisProps} tickFormatter={(v) => `${Math.round(v * 100)}%`} domain={[0, top]} ticks={ticks} width={40} />
         <Tooltip
           cursor={{ fill: 'var(--surface-2)' }}
           content={
@@ -40,10 +43,10 @@ export function RateBarChart({ data, baseline, xLabel, height = 210, color = C.s
           }
         />
         {Number.isFinite(baseline) && (
-          <ReferenceLine y={baseline} stroke="var(--text-secondary)" strokeDasharray="4 4" label={{ value: `avg ${fmtPct(baseline)}`, position: 'insideTopRight', fill: 'var(--text-secondary)', fontSize: 10.5 }} />
+          <ReferenceLine y={baseline} stroke="var(--text-secondary)" strokeDasharray="4 4" />
         )}
         <Bar dataKey="rate" fill={color} radius={[4, 4, 0, 0]} maxBarSize={44} isAnimationActive={false}>
-          <LabelList dataKey="rate" position="top" formatter={(v) => fmtPct(v, 1)} fill="var(--text-secondary)" fontSize={10.5} />
+          <LabelList dataKey="rate" position="top" formatter={(v) => fmtPct(v, 1)} fill="var(--text-secondary)" fontSize={11} />
         </Bar>
       </BarChart>
     </ResponsiveContainer>

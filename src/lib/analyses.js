@@ -1,5 +1,5 @@
 // Shared analyses so every tab quotes the same test battery and the same assumptions.
-import { welch, chiSquare } from './stats.js';
+import { welch, chiSquare, logisticFit, logisticPredict, nullLogLik, lrTest, auc, propTest as _propTest } from './stats.js';
 import {
   churnRate, zVsRest, groupBy, TIERS, GENDERS, AGE_BRACKETS, INCOME_Q, TENURE_BANDS, ENG_BUCKETS, NPS_BUCKETS, CB_TIERS,
 } from './data.js';
@@ -63,4 +63,71 @@ export function churnBattery(rows) {
   }
   const bonf = all.filter((x) => x.p < 0.05 / Math.max(1, all.length));
   return { profile, chi, total: all.length, sig, bonf, minP, minLabel, topGroup };
+}
+
+// ---------- multivariate churn model (logistic regression; inferential, not an ML pipeline) ----------
+
+const MODEL_NUM = [
+  ['age', 'Age'], ['income', 'Monthly income'], ['tenure', 'Tenure'], ['txns', 'Monthly transactions'], ['atv', 'Avg transaction value'],
+  ['cashback', 'Cashback utilisation'], ['engagement', 'App engagement'], ['support', 'Support contacts'], ['nps', 'NPS'],
+];
+const MODEL_CAT = [
+  ['Prime member', (r) => r.prime], ['Tier 2 (vs Tier 1)', (r) => (r.tier === 'Tier 2' ? 1 : 0)], ['Tier 3 (vs Tier 1)', (r) => (r.tier === 'Tier 3' ? 1 : 0)],
+  ['Male (vs Female)', (r) => (r.gender === 'Male' ? 1 : 0)], ['Other gender (vs Female)', (r) => (r.gender === 'Other' ? 1 : 0)],
+];
+export const NAMED_INTERACTIONS = [['support', 'nps'], ['engagement', 'support'], ['engagement', 'nps'], ['cashback', 'tenure'], ['cashback', 'engagement']];
+
+function mulberry32(a) {
+  return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+
+/**
+ * Logistic regression of churn on all 12 recorded attributes (numeric fields standardised), plus
+ * nested likelihood-ratio tests for squared terms (non-linearity) and named interactions, a 5-fold
+ * cross-validated AUC, and the "unhappy, disengaged, high-support" risk zone.
+ */
+export function churnModel(rows) {
+  const y = rows.map((r) => r.churned);
+  const nPos = y.reduce((s, v) => s + v, 0);
+  if (rows.length < 300 || nPos < 30 || nPos > rows.length - 30) return { ok: false, reason: 'Needs at least 300 customers with both churned and active users.' };
+  const stdz = Object.fromEntries(MODEL_NUM.map(([k]) => {
+    const m = rows.reduce((s, r) => s + r[k], 0) / rows.length;
+    const sdv = Math.sqrt(rows.reduce((s, r) => s + (r[k] - m) ** 2, 0) / (rows.length - 1)) || 1;
+    return [k, (r) => (r[k] - m) / sdv];
+  }));
+  // main design: drop any column that is constant under the current filter
+  let terms = [...MODEL_NUM.map(([k, label]) => ({ label, f: stdz[k] })), ...MODEL_CAT.map(([label, f]) => ({ label, f }))];
+  terms = terms.filter((t) => { const v = rows.map(t.f); return Math.max(...v) - Math.min(...v) > 1e-9; });
+  const X = rows.map((r) => terms.map((t) => t.f(r)));
+  const main = logisticFit(X, y);
+  const l0 = nullLogLik(y);
+  const overall = lrTest(main.ll, l0, terms.length);
+  const coefs = terms.map((t, i) => ({ label: t.label, ...main.coefs[i + 1] }));
+
+  const sq = MODEL_NUM.map(([k]) => (r) => stdz[k](r) ** 2);
+  const quadFit = logisticFit(rows.map((r, i) => [...X[i], ...sq.map((f) => f(r))]), y);
+  const quad = lrTest(quadFit.ll, main.ll, sq.length);
+
+  const ix = NAMED_INTERACTIONS.map(([a, b]) => (r) => stdz[a](r) * stdz[b](r));
+  const ixFit = logisticFit(rows.map((r, i) => [...X[i], ...ix.map((f) => f(r))]), y);
+  const inter = lrTest(ixFit.ll, main.ll, ix.length);
+  const interEach = NAMED_INTERACTIONS.map(([a, b], j) => ({ label: `${a} × ${b}`, ...ixFit.coefs[terms.length + 1 + j] }));
+
+  // 5-fold cross-validated AUC with a fixed seed (reproducible)
+  const rnd = mulberry32(7);
+  const fold = rows.map(() => Math.floor(rnd() * 5));
+  const aucs = [];
+  for (let f = 0; f < 5; f++) {
+    const tr = [], te = [];
+    rows.forEach((_, i) => (fold[i] === f ? te : tr).push(i));
+    const fit = logisticFit(tr.map((i) => X[i]), tr.map((i) => y[i]));
+    aucs.push(auc(logisticPredict(fit, te.map((i) => X[i])), te.map((i) => y[i])));
+  }
+  const cvAuc = aucs.reduce((s, v) => s + v, 0) / aucs.length;
+
+  const zoneRows = rows.filter((r) => r.engagement <= 3 && r.support >= 7 && r.nps < 0);
+  const restRows = rows.filter((r) => !(r.engagement <= 3 && r.support >= 7 && r.nps < 0));
+  const zone = { n: zoneRows.length, ...(_propTest(restRows, zoneRows)) };
+
+  return { ok: true, n: rows.length, terms: terms.length, overall, mcfadden: 1 - main.ll / l0, coefs, quad, inter, interEach, cvAuc, zone };
 }

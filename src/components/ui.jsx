@@ -41,8 +41,7 @@ export function Card({ title, subtitle, children, actions, className = '' }) {
 export function Callout({ children, tone = 'info', title = 'Insight' }) {
   return (
     <div className={`callout callout-${tone}`} role="note">
-      <span className="callout-icon" aria-hidden>{tone === 'warn' ? '!' : tone === 'good' ? '✓' : 'i'}</span>
-      <div><strong>{title}. </strong>{children}</div>
+      <strong>{title}. </strong>{children}
     </div>
   );
 }

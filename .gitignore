@@ -3,3 +3,4 @@ dist
 .vercel
 .claude/settings.local.json
 *.log
+.taste-skill

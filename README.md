@@ -23,11 +23,23 @@ An interactive case-competition dashboard answering the five Amazon Pay India ca
 
 | | Blue pill (comfortable story) | Red pill (tested result) |
 |---|---|---|
-| Q1 | Disengaged, unhappy, high-support users churn | 0 of 21 Welch/χ² tests significant (smallest p ≈ 0.052, Gender). The only standout group (Gender = Other, 27.8% churn, n = 97) does not survive FDR correction. **No recorded attribute explains churn.** *Hypothesis, not testable with this CSV:* churn follows unrecorded experience events (failed payments, refund delays, rival offers) |
+| Q1 | Disengaged, unhappy, high-support users churn | 0 of 21 Welch/χ² tests significant (smallest p ≈ 0.052, Gender). The only standout group (Gender = Other, 27.8% churn, n = 97) does not survive FDR correction. **No recorded attribute explains churn, alone or combined:** a logistic regression on all 12 attributes is not significant (p = 0.53, McFadden R² 0.003) and its 5-fold cross-validated AUC is 0.49 (coin flip); squared terms (p = 0.94), named interactions (p = 0.63) and all 45 pairwise interactions (0 survive FDR) add nothing. *Hypothesis, not testable with this CSV:* churn follows unrecorded experience events (failed payments, refund delays, rival offers) |
 | Q2 | Prime's sunk-cost moat lifts Pay usage and loyalty | Prime: 74.8 vs 76.5 txns/mo (p = 0.16); churn 19.7% vs 18.4% (p = 0.27). **No significant difference detected**, which is not proof of zero effect; membership is self-selected, so no causal claim |
 | Q3 | Tier-1, affluent, Prime users carry value | Top 20% of users = **58%** of the *throughput proxy* (Gini ≈ 0.57); no segment ANOVA is significant (η² < 0.2%). The proxy is built from frequency, ticket and tenure, so its link to behaviour is by construction; it is cumulative ₹ throughput, **not profit or true LTV** |
 | Q4 | Cashback builds habits | All \|r\| < 0.02 between cashback utilisation and frequency, ticket, engagement and churn: **no detectable association**. Observational, so it cannot rule out a causal effect; consistent with mental-accounting discounting. Personas use hand-set thresholds and are hypotheses |
 | Q5 | Raise cashback for everyone | Test personalisation on **throughput × reliance** (status for top users, AutoPay habit bridges, scratch cards, caps for hypothesised mercenaries). All ROI and retention figures are **scenario outputs under stated assumptions**, to be validated by A/B holdouts |
+
+### What the data does not establish
+
+These are hypotheses or scenario assumptions, labelled as such in the dashboard and deck. None is a finding of the 5,000-row CSV.
+
+- **Why customers churn.** No recorded attribute, alone or combined, predicts churn. That churn follows unrecorded experience events (failed payments, refund delays, rival offers) is a hypothesis to test once those events are logged; the CSV contains no event data.
+- **Why Prime shows no Pay effect.** The CSV shows no significant Prime difference; explanations such as "Prime rewards shopping, not paying" or multi-homing across wallets are untested hypotheses, and Prime membership is self-selected.
+- **Whether cashback causes behaviour.** No detectable association is not proof of no causal effect; only a randomised test can show it.
+- **The cashback personas.** Utility-led, subsidised, mercenary and dormant are hand-set threshold rules, not validated segments.
+- **Forward value.** It depends on an assumed observation window for the churn flag, an assumed take rate and an assumed cashback rate; none is in the CSV.
+- **Margins and ROI.** The CSV holds no revenue or cost data. "Negative modelled margin", offer ROI, retained customers and net impact are scenario outputs of assumed inputs, not expected results.
+- **A/B sample sizes.** They size a test for an assumed effect using the normal approximation (pooled and continuity-corrected figures are both shown); they do not show any effect will occur.
 
 **Data-integrity note:** implied monthly GMV (txns × ticket) exceeds stated monthly income for ~77% of users, and the features are nearly independent, which suggests a synthetic dataset. Conclusions therefore rest on ranks, ratios, effect sizes and p-values, and ₹ LTV is presented as a throughput index.
 
@@ -119,6 +131,9 @@ No environment variables are needed. The dataset ships inside the JS bundle.
 **Statistics**
 - p-values are computed in the browser: Welch t (Satterthwaite df), Pearson χ² (no Yates correction), one-way ANOVA F and two-proportion z. They match SciPy to three decimals.
 - Welch confidence intervals use the **t critical value at the Satterthwaite df**, not 1.96. Correlation significance uses the **exact t-test threshold on r** (df = n − 2), which matters for small filtered samples.
+- Churn is also modelled multivariately: logistic regression (IRLS, matches statsmodels) on all 12 attributes with likelihood-ratio tests for squared terms and interactions, plus a 5-fold cross-validated AUC. This is inferential statistics, not an ML pipeline.
+- The LTV tab compares top vs bottom throughput deciles only on attributes outside the throughput formula (the formula's own components rise by construction).
+- The Offer tab's robustness card re-runs the economics across 9 take-rate × cashback-rate sets, shows the churn cut a blanket hike needs to break even, and how many heavy users could leave before capping erases its saving.
 - Exploratory subgroup scans (single-group splits and the 2–3-way pocket scan) report **Benjamini–Hochberg FDR q-values**. On the full sample, none of the 3,768 pockets survives correction.
 - Each p-value is shown with an effect size (Cohen's d, Cramér's V or η²). With n = 5,000, statistical significance alone is not commercial significance.
 

@@ -12,9 +12,9 @@ export function Concept({ name, children }) {
 
 /** Source badge: separates CSV-derived numbers from external macro context. */
 export function SourceTag({ kind = 'sample' }) {
-  if (kind === 'macro') return <span className="src-tag macro">Macro / Industry Context</span>;
-  if (kind === 'scenario') return <span className="src-tag scenario">Scenario · Assumption-based</span>;
-  return <span className="src-tag sample">5,000-User Sample Analytics</span>;
+  if (kind === 'macro') return <span className="src-tag macro">Macro context</span>;
+  if (kind === 'scenario') return <span className="src-tag scenario">Scenario, assumption-based</span>;
+  return <span className="src-tag sample">From the 5,000-customer CSV</span>;
 }
 
 /** Banner for simulated figures: outputs follow from stated assumptions, not from the CSV. */
@@ -44,11 +44,11 @@ export function PillContrast({ blue, red, title }) {
       {title && <h4>{title}</h4>}
       <div className="pill-grid">
         <div className="pill-side blue">
-          <span className="pill-tag">Blue pill · the comfortable story</span>
+          <span className="pill-tag">Common assumption</span>
           <p>{blue}</p>
         </div>
         <div className="pill-side red">
-          <span className="pill-tag">Red pill · what the data says</span>
+          <span className="pill-tag">What the data shows</span>
           <p>{red}</p>
         </div>
       </div>
@@ -79,7 +79,7 @@ export function Sig({ p }) {
   if (!Number.isFinite(p)) return <span className="sig-b ns">–</span>;
   const cls = p < 0.05 ? 'sig' : p < 0.1 ? 'marg' : 'ns';
   const txt = p < 0.001 ? 'p<.001' : `p=${p.toFixed(3)}`;
-  return <span className={`sig-b ${cls}`}>{txt}{p < 0.05 ? ' ✓' : ''}</span>;
+  return <span className={`sig-b ${cls}`}>{txt}</span>;
 }
 
 /**

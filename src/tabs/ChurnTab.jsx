@@ -9,7 +9,7 @@ import {
   TIERS, GENDERS, NPS_BUCKETS, ENG_BUCKETS, AGE_BRACKETS, CB_TIERS, INCOME_Q, TENURE_BANDS,
 } from '../lib/data.js';
 import { fmtP, normCdf, bhAdjust, pearsonRCrit } from '../lib/stats.js';
-import { churnBattery, CHURN_FEATURES } from '../lib/analyses.js';
+import { churnBattery, CHURN_FEATURES, churnModel } from '../lib/analyses.js';
 import { PillContrast, SectionTitle, Concept, Sig } from '../components/narrative.jsx';
 
 
@@ -91,6 +91,7 @@ export default function ChurnTab({ rows }) {
   }, [splits, rows, base]);
 
   const battery = useMemo(() => churnBattery(rows), [rows]);
+  const model = useMemo(() => churnModel(rows), [rows]);
   const { profile, chi } = battery;
   const sigCount = battery.sig.length;
   const hasBoth = rows.some((r) => r.churned) && rows.some((r) => !r.churned);
@@ -121,7 +122,7 @@ export default function ChurnTab({ rows }) {
   return (
     <>
       <SectionTitle title="Q1 · What factors most strongly influence customer churn?">
-        Columns: <code>Churned</code> vs <code>Tenure months</code>, <code>App engagement score</code>, <code>Customer support contacts</code>, <code>Net promoter score</code>, <code>City tier</code>, <code>Age</code>, <code>Monthly income inr</code>. Methods: Wilson CIs, Welch t, χ² independence, point-biserial r, bin spread, 2–3-way pocket scan.
+        Columns: <code>Churned</code> vs <code>Tenure months</code>, <code>App engagement score</code>, <code>Customer support contacts</code>, <code>Net promoter score</code>, <code>City tier</code>, <code>Age</code>, <code>Monthly income inr</code>. Methods: Wilson CIs, Welch t, χ² independence, point-biserial r, bin spread, 2–3-way pocket scan, multivariate logistic regression with non-linear and interaction tests.
       </SectionTitle>
       <PillContrast
         blue={<>“Churners are the disengaged, unhappy, high-support users. Fix NPS and support and churn falls.” The textbook <Concept name="Habit Loop">broken-habit-loop</Concept> story.</>}
@@ -148,7 +149,7 @@ export default function ChurnTab({ rows }) {
         <Card title="Churned vs. Active: profile gap" subtitle="Churned mean vs Active mean, as % difference (NPS: absolute points). Red = higher among churners.">
           {hasBoth ? (
             <>
-              <ResponsiveContainer width="100%" height={330}>
+              <ResponsiveContainer width="100%" height={530}>
                 <BarChart data={profile} layout="vertical" margin={{ top: 4, right: 20, left: 10, bottom: 18 }}>
                   <CartesianGrid horizontal={false} />
                   <XAxis type="number" {...axisProps} tickFormatter={(v) => `${v > 0 ? '+' : ''}${v.toFixed(1)}`} label={axisLabel('% difference, churned vs active')} domain={['auto', 'auto']} />
@@ -211,7 +212,7 @@ export default function ChurnTab({ rows }) {
               <CartesianGrid horizontal={false} />
               <XAxis type="number" {...axisProps} domain={[0, (max) => Math.max(max, importance.sigR) * 1.15]} tickFormatter={(v) => v.toFixed(3)} label={axisLabel('|r| with churn flag')} />
               <YAxis type="category" dataKey="label" {...axisProps} width={140} />
-              <ReferenceLine x={importance.sigR} stroke="var(--text-secondary)" strokeDasharray="4 4" label={{ value: `p<.05 at |r|>${importance.sigR.toFixed(3)}`, position: 'insideBottomRight', fill: 'var(--text-secondary)', fontSize: 10.5 }} />
+              <ReferenceLine x={importance.sigR} stroke="var(--text-secondary)" strokeDasharray="4 4" label={{ value: `p<.05 at |r|>${importance.sigR.toFixed(3)}`, position: 'insideBottomRight', fill: 'var(--text-secondary)', fontSize: 11 }} />
               <Tooltip cursor={{ fill: 'var(--surface-2)' }} content={<Tip build={(p) => {
                 const d = p[0].payload;
                 return [{ label: 'r (signed)', value: d.r.toFixed(4), color: C.s1 }, { label: 'Variance explained', value: `${(d.r * d.r * 100).toFixed(3)}%` }];
@@ -278,10 +279,44 @@ export default function ChurnTab({ rows }) {
             : 'Surviving pockets are still exploratory and overlapping; validate them in a held-out sample or A/B test before acting.'}
         </Callout>
       </Card>
+      <Card title="Multivariate check: logistic regression on all 12 attributes" subtitle="Churn ~ age + income + tenure + Prime + txns + ticket + cashback + engagement + support + NPS + tier + gender (numeric fields standardised, so odds ratios are per 1 SD). Nested likelihood-ratio tests add squared terms and interactions.">
+        {!model.ok ? <p className="muted">{model.reason}</p> : (
+          <>
+            <div className="stats">
+              <div className="stat"><span>Whole model vs no predictors</span><b><Sig p={model.overall.p} /></b><small>LR χ² = {fmtNum(model.overall.lr, 1)}, df {model.overall.df}</small></div>
+              <div className="stat"><span>McFadden pseudo-R²</span><b>{fmtNum(model.mcfadden, 4)}</b><small>share of churn uncertainty explained</small></div>
+              <div className="stat"><span>5-fold cross-validated AUC</span><b>{fmtNum(model.cvAuc, 3)}</b><small>0.5 = coin flip · 1.0 = perfect</small></div>
+              <div className="stat"><span>Non-linear (squared) terms</span><b><Sig p={model.quad.p} /></b><small>{model.quad.df} terms, joint LR test</small></div>
+              <div className="stat"><span>Named interactions</span><b><Sig p={model.inter.p} /></b><small>{model.interEach.map((x) => x.label).join(', ')}</small></div>
+              <div className="stat"><span>Low engagement + high support + NPS &lt; 0</span><b>{fmtPct(model.zone.pb)} vs {fmtPct(model.zone.pa)}</b><small>n = {fmtInt(model.zone.n)} · <Sig p={model.zone.p} /></small></div>
+            </div>
+            <div className="table-wrap" style={{ marginTop: 10 }}>
+              <table>
+                <thead><tr><th>Attribute</th><th>Odds ratio</th><th>95% CI</th><th>p</th></tr></thead>
+                <tbody>
+                  {model.coefs.map((c) => (
+                    <tr key={c.label}>
+                      <td>{c.label}</td>
+                      <td>{fmtNum(c.or, 3)}</td>
+                      <td className="muted">{fmtNum(c.lo, 3)} – {fmtNum(c.hi, 3)}</td>
+                      <td><Sig p={c.p} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Callout tone={model.overall.p < 0.05 || model.cvAuc >= 0.55 ? 'info' : 'warn'} title="Verdict">
+              {model.overall.p < 0.05 || model.cvAuc >= 0.55
+                ? <>The attributes jointly carry some signal here (model p = {fmtP(model.overall.p)}, cross-validated AUC {fmtNum(model.cvAuc, 3)}). Inspect the significant odds ratios, but treat them as associations.</>
+                : <>Taken together, alone, squared or in interaction, the recorded attributes do not predict churn: the whole model is not significant (p = {fmtP(model.overall.p)}), it explains {fmtPct(model.mcfadden, 2)} of churn uncertainty, and out-of-sample it ranks churners no better than a coin flip (AUC {fmtNum(model.cvAuc, 3)}). Even the “unhappy, disengaged, high-support” zone churns at {fmtPct(model.zone.pb)} vs {fmtPct(model.zone.pa)}. The data gap, not the method, is the constraint.</>}
+            </Callout>
+          </>
+        )}
+      </Card>
       <Card title="χ² tests of independence: categorical driver vs churn" subtitle="Pearson χ² on each categorical/binned driver × churn flag. Cramér's V measures effect size (< 0.1 = negligible).">
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Driver</th><th>Levels</th><th>χ²</th><th>df</th><th>Cramér's V</th><th>Lowest churn</th><th>Highest churn</th><th>p-value</th></tr></thead>
+            <thead><tr><th>Driver</th><th>Levels</th><th>χ²</th><th>df</th><th>Cramér's V</th><th>Min expected</th><th>Lowest churn</th><th>Highest churn</th><th>p-value</th></tr></thead>
             <tbody>
               {chi.map((c) => {
                 const sorted = [...c.table].sort((a, b) => a.rate - b.rate);
@@ -293,6 +328,7 @@ export default function ChurnTab({ rows }) {
                     <td>{fmtNum(c.chi2, 2)}</td>
                     <td>{c.df}</td>
                     <td className="muted">{fmtNum(c.cramerV, 3)}</td>
+                    <td className={c.minExp < 5 ? 'pos' : 'muted'} title={c.minExp < 5 ? 'Expected count under 5: the chi-square approximation is unreliable' : undefined}>{fmtNum(c.minExp, 1)}{c.minExp < 5 ? ' (low)' : ''}</td>
                     <td>{lo ? `${lo.cat} · ${fmtPct(lo.rate)}` : '–'}</td>
                     <td>{hi ? `${hi.cat} · ${fmtPct(hi.rate)}` : '–'}</td>
                     <td><Sig p={c.p} /></td>
@@ -302,6 +338,11 @@ export default function ChurnTab({ rows }) {
             </tbody>
           </table>
         </div>
+        {chi.some((c) => c.minExp < 5) && (
+          <Callout tone="warn" title="Small expected counts">
+            {chi.filter((c) => c.minExp < 5).map((c) => c.label).join(', ')} {chi.filter((c) => c.minExp < 5).length === 1 ? 'has' : 'have'} an expected cell count under 5 in this filter, so the χ² approximation is unreliable there: read those p-values as indicative only, or merge sparse levels (an exact test would be needed for a firm answer).
+          </Callout>
+        )}
         <Callout tone="warn" title="So what for Amazon Pay">
           With {chi.filter((c) => c.p < 0.05).length} of {chi.length} categorical drivers significant (smallest p = {fmtP(Math.min(...chi.map((c) => c.p)))}), the recorded attributes do not identify who leaves.
           <b>Hypothesis to test (not established by this data):</b> churn is triggered by experience events such as failed transactions, refund delays or competitor offers, none of which the CSV records.

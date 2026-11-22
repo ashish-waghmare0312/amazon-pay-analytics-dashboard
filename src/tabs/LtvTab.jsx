@@ -4,7 +4,7 @@ import {
 } from 'recharts';
 import { Card, Callout, Segmented, Tip, axisProps, axisLabel, Legend, Slider, C } from '../components/ui.jsx';
 import { PillContrast, SectionTitle, Concept, Sig } from '../components/narrative.jsx';
-import { anova, fmtP } from '../lib/stats.js';
+import { anova, fmtP, welch, propTest } from '../lib/stats.js';
 import { annualAttrition } from '../lib/analyses.js';
 import { ScenarioNote } from '../components/narrative.jsx';
 import {
@@ -21,7 +21,7 @@ const DIMS = [
 ];
 
 const SEQ = ['var(--seq-1)', 'var(--seq-2)', 'var(--seq-3)', 'var(--seq-4)', 'var(--seq-5)'];
-const seqInk = (i) => (i >= 2 ? '#fff' : 'var(--text-primary)');
+const seqInk = (i) => `var(--seq-ink-${i + 1})`; // ink per ramp step, set per theme
 
 /** Annual net margin per customer under the scenario assumptions. */
 export const annualMargin = (r, take, cbRate) => r.gmv * 12 * (take - cbRate * (r.cashback / 100));
@@ -67,6 +67,7 @@ export default function LtvTab({ rows, assume, setAssume }) {
         ltv: mean(g2, 'ltv'), txns: mean(g2, 'txns'), atv: mean(g2, 'atv'), tenure: mean(g2, 'tenure'),
         churn: churnRate(g2), prime: mean(g2, 'prime'), cb: mean(g2, 'cashback'), eng: mean(g2, 'engagement'),
         income: mean(g2, 'income'), age: mean(g2, 'age'), t1: g2.filter((r) => r.tier === 'Tier 1').length / g2.length,
+        nps: mean(g2, 'nps'), sup: mean(g2, 'support'), rows: g2,
       };
     });
     return { curve, top10: shareTop(0.1), top20: shareTop(0.2), top50: shareTop(0.5), gini, deciles, total };
@@ -85,7 +86,7 @@ export default function LtvTab({ rows, assume, setAssume }) {
   const rd = DIMS.find((d) => d.k === rowDim), cd = DIMS.find((d) => d.k === colDim);
   const METRICS = {
     ltv: { label: 'Avg throughput proxy (₹ throughput)', fmt: fmtINRShort, f: (g) => mean(g, 'ltv') },
-    fwd: { label: `Fwd ${years}-yr net value / user`, fmt: fmtINRShort, f: (g) => forwardValue(mean(g.map((r) => annualMargin(r, T, CB))), annualAttrition(churnRate(g), windowMonths), years) },
+    fwd: { label: `Scenario: ${years}-yr net value / user (assumed ${windowMonths}-month churn window)`, fmt: fmtINRShort, f: (g) => forwardValue(mean(g.map((r) => annualMargin(r, T, CB))), annualAttrition(churnRate(g), windowMonths), years) },
     churn: { label: 'Churn rate', fmt: (v) => fmtPct(v), f: (g) => churnRate(g) },
     pool: { label: 'Total throughput pool (share)', fmt: (v) => fmtPct(v), f: (g) => sum(g, 'ltv') / pareto.total },
   };
@@ -149,7 +150,7 @@ export default function LtvTab({ rows, assume, setAssume }) {
               <XAxis dataKey="x" type="number" domain={[0, 1]} {...axisProps} tickFormatter={(v) => `${Math.round(v * 100)}%`} label={axisLabel('Share of customers (ranked by LTV)')} />
               <YAxis {...axisProps} domain={[0, 1]} tickFormatter={(v) => `${Math.round(v * 100)}%`} width={44} label={axisLabel('Cumulative LTV share', 'y')} />
               <ReferenceLine segment={[{ x: 0, y: 0 }, { x: 1, y: 1 }]} stroke="var(--text-muted)" strokeDasharray="4 4" />
-              <ReferenceLine x={0.2} stroke="var(--text-secondary)" strokeDasharray="2 3" label={{ value: `top 20% → ${fmtPct(pareto.top20, 0)}`, position: 'insideBottomRight', fill: 'var(--text-secondary)', fontSize: 10.5 }} />
+              <ReferenceLine x={0.2} stroke="var(--text-secondary)" strokeDasharray="2 3" label={{ value: `top 20% → ${fmtPct(pareto.top20, 0)}`, position: 'insideBottomRight', fill: 'var(--text-secondary)', fontSize: 11 }} />
               <Tooltip content={<Tip title={(p) => `Top ${fmtPct(p[0].payload.x, 0)} of customers`} build={(p) => [{ label: 'Share of throughput pool', value: fmtPct(p[0].payload.y), color: C.s1 }]} />} />
               <Area type="monotone" dataKey="y" stroke={C.s1} strokeWidth={2} fill={C.s1} fillOpacity={0.16} isAnimationActive={false} />
             </AreaChart>
@@ -166,7 +167,7 @@ export default function LtvTab({ rows, assume, setAssume }) {
               <Tooltip cursor={{ fill: 'var(--surface-2)' }} content={<Tip build={(p) => [{ label: 'r', value: p[0].payload.r.toFixed(3), color: C.s1 }, { label: 'Variance explained', value: fmtPct(p[0].payload.r ** 2, 1) }]} />} />
               <Bar dataKey="r" radius={4} maxBarSize={16} isAnimationActive={false}>
                 {drivers.map((d) => <Cell key={d.k} fill={['txns', 'atv', 'tenure'].includes(d.k) ? C.s1 : 'var(--text-muted)'} />)}
-                <LabelList dataKey="r" position="right" formatter={(v) => v.toFixed(2)} fill="var(--text-secondary)" fontSize={10.5} />
+                <LabelList dataKey="r" position="right" formatter={(v) => v.toFixed(2)} fill="var(--text-secondary)" fontSize={11} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -183,7 +184,7 @@ export default function LtvTab({ rows, assume, setAssume }) {
               <YAxis {...axisProps} tickFormatter={(v) => `${Math.round(v * 100)}%`} width={44} label={axisLabel('Share of throughput pool', 'y')} />
               <Tooltip cursor={{ fill: 'var(--surface-2)' }} content={<Tip build={(p) => [{ label: 'Share of pool', value: fmtPct(p[0].payload.share), color: C.s1 }, { label: 'Avg throughput proxy', value: fmtINRShort(p[0].payload.ltv) }, { label: 'Customers', value: fmtInt(p[0].payload.n) }]} />} />
               <Bar dataKey="share" fill={C.s1} radius={[4, 4, 0, 0]} maxBarSize={40} isAnimationActive={false}>
-                <LabelList dataKey="share" position="top" formatter={(v) => fmtPct(v, 0)} fill="var(--text-secondary)" fontSize={10.5} />
+                <LabelList dataKey="share" position="top" formatter={(v) => fmtPct(v, 0)} fill="var(--text-secondary)" fontSize={11} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -202,17 +203,46 @@ export default function LtvTab({ rows, assume, setAssume }) {
         <Legend items={[{ label: 'Prime share', color: C.s1 }, { label: 'Tier-1 share', color: C.s2 }, { label: 'Churn rate', color: C.s3 }]} />
         <div className="table-wrap" style={{ marginTop: 10 }}>
           <table>
-            <thead><tr><th>Decile</th><th>Avg throughput</th><th>Txns/mo</th><th>Avg ticket</th><th>Tenure</th><th>Engagement</th><th>Cashback %</th><th>Income</th><th>Age</th><th>Prime</th><th>Churn</th></tr></thead>
+            <thead><tr><th>Decile</th><th>Avg throughput</th><th>Txns/mo</th><th>Avg ticket</th><th>Tenure</th><th>Engagement</th><th>NPS</th><th>Support</th><th>Cashback %</th><th>Income</th><th>Age</th><th>Prime</th><th>Churn</th></tr></thead>
             <tbody>
               {pareto.deciles.map((d) => (
                 <tr key={d.name}>
                   <td>{d.name}</td><td>{fmtINRShort(d.ltv)}</td><td>{fmtNum(d.txns, 0)}</td><td>{fmtINR(d.atv)}</td><td>{fmtNum(d.tenure, 0)}</td>
-                  <td className="muted">{fmtNum(d.eng, 1)}</td><td className="muted">{fmtNum(d.cb, 0)}%</td><td className="muted">{fmtINRShort(d.income)}</td><td className="muted">{fmtNum(d.age, 0)}</td><td className="muted">{fmtPct(d.prime, 0)}</td><td className="muted">{fmtPct(d.churn)}</td>
+                  <td className="muted">{fmtNum(d.eng, 1)}</td><td className="muted">{fmtNum(d.nps, 1)}</td><td className="muted">{fmtNum(d.sup, 1)}</td><td className="muted">{fmtNum(d.cb, 0)}%</td><td className="muted">{fmtINRShort(d.income)}</td><td className="muted">{fmtNum(d.age, 0)}</td><td className="muted">{fmtPct(d.prime, 0)}</td><td className="muted">{fmtPct(d.churn)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+        {(() => {
+          const top = pareto.deciles[0].rows, bot = pareto.deciles[9].rows;
+          const nums = [['engagement', 'App engagement', (v) => fmtNum(v, 2)], ['nps', 'NPS', (v) => fmtNum(v, 1)], ['support', 'Support contacts', (v) => fmtNum(v, 2)],
+            ['cashback', 'Cashback utilisation %', (v) => `${fmtNum(v, 1)}%`], ['income', 'Monthly income', fmtINRShort], ['age', 'Age', (v) => fmtNum(v, 1)]];
+          const res = [
+            ...nums.map(([k, label, f]) => { const w = welch(bot, top, k); return { label, a: f(w.mb), b: f(w.ma), p: w.p }; }),
+            ...[['prime', 'Prime share', (r) => r.prime], ['t1', 'Tier-1 share', (r) => (r.tier === 'Tier 1' ? 1 : 0)], ['churned', 'Churn rate', (r) => r.churned]].map(([k, label, fn]) => {
+              const pt = propTest(bot.map((r) => ({ v: fn(r) })), top.map((r) => ({ v: fn(r) })), 'v');
+              return { label, a: fmtPct(pt.pb), b: fmtPct(pt.pa), p: pt.p };
+            }),
+          ];
+          const sig = res.filter((x) => x.p < 0.05);
+          return (
+            <div style={{ marginTop: 12 }}>
+              <h4 style={{ margin: '0 0 6px', fontSize: 13.5 }}>Non-component check: top vs bottom decile on attributes NOT in the throughput formula</h4>
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>Attribute</th><th>Top 10% (D1)</th><th>Bottom 10% (D10)</th><th>p</th></tr></thead>
+                  <tbody>{res.map((x) => <tr key={x.label}><td>{x.label}</td><td>{x.a}</td><td>{x.b}</td><td><Sig p={x.p} /></td></tr>)}</tbody>
+                </table>
+              </div>
+              <Callout tone="info" title="Why this table and not the spend ratios">
+                Transactions, ticket and tenure are higher in D1 by construction, because the proxy multiplies them. The informative test is everything else:
+                {sig.length === 0 ? ' no attribute outside the formula differs significantly between top and bottom deciles.' : ` only ${sig.map((x) => x.label).join(', ')} differ${sig.length === 1 ? 's' : ''} at p < .05 (uncorrected, ${res.length} tests).`}
+                {' '}Top users cannot be found from demographics or experience scores; they can only be ranked by their own transaction behaviour.
+              </Callout>
+            </div>
+          );
+        })()}
         <Callout tone="info" title="What the deciles do and do not show">
           D1 transacts {fmtNum(d1.txns / d10.txns, 1)}× as often as D10, at {fmtNum(d1.atv / d10.atv, 1)}× the ticket and {fmtNum(d1.tenure / d10.tenure, 1)}× the tenure,
           while their income (≈{fmtINRShort(d1.income)} vs {fmtINRShort(d10.income)}), Prime share ({fmtPct(d1.prime, 0)} vs {fmtPct(d10.prime, 0)}) and churn ({fmtPct(d1.churn)} vs {fmtPct(d10.churn)}) {demoSimilar ? 'are near-identical' : 'differ, but far less than behaviour does'}.
@@ -231,7 +261,8 @@ export default function LtvTab({ rows, assume, setAssume }) {
             </>
           )}
         >
-          <Segmented value={metric} onChange={setMetric} options={[{ value: 'ltv', label: 'Avg throughput' }, { value: 'fwd', label: 'Fwd value' }, { value: 'churn', label: 'Churn' }, { value: 'pool', label: 'Pool share' }]} />
+          <Segmented value={metric} onChange={setMetric} options={[{ value: 'ltv', label: 'Avg throughput' }, { value: 'fwd', label: 'Fwd value (scenario)' }, { value: 'churn', label: 'Churn' }, { value: 'pool', label: 'Pool share' }]} />
+          {metric === 'fwd' && <div style={{ marginTop: 10 }}><ScenarioNote>Forward value is not measured. It assumes the churn flag covers {windowMonths} months (the CSV does not say), a {take.toFixed(2)}% take rate and {cbRate.toFixed(2)}% cashback; change any of them below and every cell changes.</ScenarioNote></div>}
           <div className="heat" style={{ gridTemplateColumns: `110px repeat(${cd.order.length}, minmax(0,1fr))`, marginTop: 10 }}>
             <div />
             {cd.order.map((c) => <div className="hh" key={c}>{c}</div>)}
@@ -245,7 +276,7 @@ export default function LtvTab({ rows, assume, setAssume }) {
                     <div key={cv} className="hc" title={`${rv} × ${cv}\n${M.label}: ${Number.isFinite(cell.v) ? M.fmt(cell.v) : 'n too small'}\nCustomers: ${cell.n}`}
                       style={{ background: b < 0 ? 'var(--seq-0)' : SEQ[b], color: b < 0 ? 'var(--text-muted)' : seqInk(b) }}>
                       {Number.isFinite(cell.v) ? M.fmt(cell.v) : '–'}
-                      <div style={{ fontSize: 10, fontWeight: 400, opacity: 0.8 }}>n={cell.n}</div>
+                      <div style={{ fontSize: 11, fontWeight: 400, opacity: 0.85 }}>n={cell.n}</div>
                     </div>
                   );
                 })}
@@ -291,7 +322,11 @@ export default function LtvTab({ rows, assume, setAssume }) {
               : <>No segment dimension is significantly associated with the throughput proxy (all p ≥ .05, smallest p = {fmtP(Math.min(...anovas.map((a) => a.p)))}). {(() => { const g = anovas.flatMap((a) => a.groups.map((x) => ({ ...x, dim: a.label }))).sort((x, y) => y.mean - x.mean)[0]; return g ? `${g.key} (${g.dim}) has the highest raw mean, but the gap is within noise.` : ''; })()} The highest-throughput group is defined by the proxy's own components (the top-2 deciles), not by a demographic segment.</>}
           </Callout>
 
-          <h4 style={{ margin: '16px 0 8px', fontSize: 13.5 }}>Unit-economics scenario</h4>
+        </Card>
+      </div>
+
+      <Card title="Unit-economics scenario" subtitle="Turns the throughput proxy into an illustrative margin. Every input is an assumption.">
+        <div className="grid g2" style={{ marginBottom: 0 }}>
           <ScenarioNote>Every figure below follows from the sliders, not from the CSV. Cashback cost is modelled (GMV × offered % × utilisation %); the CSV records utilisation, not rupees paid.</ScenarioNote>
           <div className="controls">
             <Slider label="Net take rate on GMV" value={take} min={0.1} max={2} step={0.05} onChange={setTake} format={(v) => `${v.toFixed(2)}%`} hint="Blended MDR/interchange/bill-pay/ads revenue per ₹ of GMV. UPI P2M is zero-MDR." />
@@ -299,14 +334,14 @@ export default function LtvTab({ rows, assume, setAssume }) {
             <Slider label="Forward horizon" value={years} min={1} max={5} onChange={setYears} format={(v) => `${v} yr`} />
             <Slider label="Assumed churn-flag window" value={windowMonths} min={3} max={36} step={3} onChange={setWindow} format={(v) => `${v} months`} hint={`The CSV gives no observation window. At ${windowMonths} months, ${fmtPct(churnRate(rows))} churn ≈ ${fmtPct(annualAttrition(churnRate(rows), windowMonths))} a year.`} />
           </div>
-          <div className="stats" style={{ marginTop: 12 }}>
+          <div className="stats">
             <div className="stat"><span>Annual net revenue</span><b>{fmtINRShort(econ.revenue)}</b><small>on {fmtINRShort(econ.gmvYr)} GMV</small></div>
             <div className="stat"><span>Modelled cashback cost / yr</span><b>{fmtINRShort(econ.cbCost)}</b><small>{fmtPct(econ.cbCost / econ.revenue, 0)} of revenue</small></div>
             <div className="stat"><span>Annual net margin</span><b>{fmtINRShort(econ.net)}</b><small>{fmtINR(econ.perUser)} per user</small></div>
-            <div className="stat"><span>Margin-negative users</span><b>{fmtPct(econ.negative / rows.length, 0)}</b><small>{fmtInt(econ.negative)} cost more than they earn</small></div>
+            <div className="stat"><span>Negative modelled margin</span><b>{fmtPct(econ.negative / rows.length, 0)}</b><small>{fmtInt(econ.negative)} users under these slider values; the CSV has no revenue or cost data</small></div>
           </div>
-        </Card>
-      </div>
+        </div>
+      </Card>
     </>
   );
 }

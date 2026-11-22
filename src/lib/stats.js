@@ -206,6 +206,25 @@ export function normCdf(z) {
 }
 
 // ---------- formatting helpers for tests ----------
+/**
+ * Users per arm to detect p1 → p2 with a two-sided two-proportion z-test (normal approximation).
+ * unpooled: (zα + zβ)² (p1q1 + p2q2) / d²   (the simplest form)
+ * pooled:   [zα √(2 p̄ q̄) + zβ √(p1q1 + p2q2)]² / d²   (standard; variance under H0 pooled)
+ * corrected: Fleiss continuity correction applied to the pooled n.
+ * Assumes independent users, equal arms, a fixed absolute effect and one primary metric.
+ */
+export function twoPropSampleSize(p1, p2, alpha = 0.05, power = 0.8) {
+  const za = alpha === 0.05 ? 1.959964 : NaN;
+  const zb = power === 0.8 ? 0.841621 : power === 0.9 ? 1.281552 : NaN;
+  const d = Math.abs(p1 - p2);
+  if (!(d > 0) || !Number.isFinite(za) || !Number.isFinite(zb)) return { unpooled: NaN, pooled: NaN, corrected: NaN };
+  const q1 = 1 - p1, q2 = 1 - p2, pb = (p1 + p2) / 2;
+  const unpooled = ((za + zb) ** 2 * (p1 * q1 + p2 * q2)) / d ** 2;
+  const pooled = (za * Math.sqrt(2 * pb * (1 - pb)) + zb * Math.sqrt(p1 * q1 + p2 * q2)) ** 2 / d ** 2;
+  const corrected = (pooled / 4) * (1 + Math.sqrt(1 + 4 / (pooled * d))) ** 2;
+  return { unpooled: Math.ceil(unpooled), pooled: Math.ceil(pooled), corrected: Math.ceil(corrected) };
+}
+
 export const fmtP = (p) => (!Number.isFinite(p) ? '–' : p < 0.001 ? '< 0.001' : p.toFixed(3));
 export const sigLabel = (p) => (!Number.isFinite(p) ? '–' : p < 0.01 ? 'Significant (p<.01)' : p < 0.05 ? 'Significant (p<.05)' : p < 0.1 ? 'Marginal (p<.10)' : 'Not significant');
 export const sigClass = (p) => (!Number.isFinite(p) ? 'muted' : p < 0.05 ? 'sig' : p < 0.1 ? 'marg' : 'muted');
@@ -213,3 +232,95 @@ export const effectLabel = (d) => {
   const a = Math.abs(d);
   return !Number.isFinite(a) ? '–' : a < 0.1 ? 'Negligible' : a < 0.3 ? 'Small' : a < 0.5 ? 'Medium' : 'Large';
 };
+
+// ---------- multivariate logistic regression (IRLS / Newton–Raphson; inferential, not ML) ----------
+function solve(A, b) {
+  // Gaussian elimination with partial pivoting; returns x for A x = b (A is n×n)
+  const n = A.length, M = A.map((r, i) => [...r, b[i]]);
+  for (let c = 0; c < n; c++) {
+    let piv = c;
+    for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[piv][c])) piv = r;
+    [M[c], M[piv]] = [M[piv], M[c]];
+    const d = M[c][c] || 1e-12;
+    for (let r = 0; r < n; r++) {
+      if (r === c) continue;
+      const f = M[r][c] / d;
+      for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k];
+    }
+  }
+  return M.map((r, i) => r[n] / (r[i] || 1e-12));
+}
+function invert(A) {
+  const n = A.length;
+  return Array.from({ length: n }, (_, j) => solve(A, A.map((_, i) => (i === j ? 1 : 0)))).reduce(
+    (acc, col, j) => { col.forEach((v, i) => { acc[i][j] = v; }); return acc; }, A.map(() => new Array(n).fill(0)));
+}
+
+/**
+ * Fit P(y=1) = logistic(X β) with an intercept. X: array of rows (numbers), y: 0/1 array.
+ * Returns coefficients with SE, Wald z/p, odds ratios + 95% CI, and the log-likelihood.
+ */
+export function logisticFit(X, y, maxIter = 50) {
+  const n = X.length, k = X[0].length + 1;
+  const Z = X.map((r) => [1, ...r]);
+  let beta = new Array(k).fill(0);
+  let ll = -Infinity;
+  for (let it = 0; it < maxIter; it++) {
+    const H = Array.from({ length: k }, () => new Array(k).fill(0));
+    const g = new Array(k).fill(0);
+    let llNew = 0;
+    for (let i = 0; i < n; i++) {
+      const eta = Z[i].reduce((s, v, j) => s + v * beta[j], 0);
+      const p = 1 / (1 + Math.exp(-eta));
+      llNew += y[i] ? Math.log(Math.max(p, 1e-300)) : Math.log(Math.max(1 - p, 1e-300));
+      const w = p * (1 - p), r = y[i] - p;
+      for (let a = 0; a < k; a++) {
+        g[a] += Z[i][a] * r;
+        for (let b = a; b < k; b++) H[a][b] += w * Z[i][a] * Z[i][b];
+      }
+    }
+    for (let a = 0; a < k; a++) for (let b = 0; b < a; b++) H[a][b] = H[b][a];
+    const step = solve(H, g);
+    beta = beta.map((v, j) => v + step[j]);
+    if (Math.abs(llNew - ll) < 1e-9) { ll = llNew; break; }
+    ll = llNew;
+  }
+  // final Hessian for standard errors
+  const H = Array.from({ length: k }, () => new Array(k).fill(0));
+  ll = 0;
+  for (let i = 0; i < n; i++) {
+    const p = 1 / (1 + Math.exp(-Z[i].reduce((s, v, j) => s + v * beta[j], 0)));
+    ll += y[i] ? Math.log(Math.max(p, 1e-300)) : Math.log(Math.max(1 - p, 1e-300));
+    const w = p * (1 - p);
+    for (let a = 0; a < k; a++) for (let b = 0; b < k; b++) H[a][b] += w * Z[i][a] * Z[i][b];
+  }
+  const cov = invert(H);
+  const coefs = beta.map((b, j) => {
+    const se = Math.sqrt(Math.max(cov[j][j], 0));
+    const z = se ? b / se : 0;
+    return { beta: b, se, z, p: 2 * (1 - normCdf(Math.abs(z))), or: Math.exp(b), lo: Math.exp(b - 1.96 * se), hi: Math.exp(b + 1.96 * se) };
+  });
+  return { beta, coefs, ll, n, k };
+}
+export const logisticPredict = (fit, X) => X.map((r) => 1 / (1 + Math.exp(-(fit.beta[0] + r.reduce((s, v, j) => s + v * fit.beta[j + 1], 0)))));
+export function nullLogLik(y) {
+  const p = y.reduce((s, v) => s + v, 0) / y.length;
+  return y.reduce((s, v) => s + (v ? Math.log(p) : Math.log(1 - p)), 0);
+}
+/** Likelihood-ratio test of a bigger nested model vs a smaller one. */
+export const lrTest = (llBig, llSmall, df) => { const lr = 2 * (llBig - llSmall); return { lr, df, p: chi2P(Math.max(lr, 0), df) }; };
+
+/** Area under the ROC curve (rank-based, ties averaged). */
+export function auc(scores, y) {
+  const idx = scores.map((s, i) => [s, y[i]]).sort((a, b) => a[0] - b[0]);
+  let rank = 0, sumPos = 0, nPos = 0;
+  for (let i = 0; i < idx.length;) {
+    let j = i;
+    while (j < idx.length && idx[j][0] === idx[i][0]) j++;
+    const avg = (i + 1 + j) / 2;
+    for (let t = i; t < j; t++) if (idx[t][1]) { sumPos += avg; nPos++; }
+    rank = j; i = j;
+  }
+  const nNeg = idx.length - nPos;
+  return nPos && nNeg ? (sumPos - (nPos * (nPos + 1)) / 2) / (nPos * nNeg) : NaN;
+}

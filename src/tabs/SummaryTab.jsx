@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Card, Callout } from '../components/ui.jsx';
-import { SectionTitle, Concept, MacroPanel, Sig } from '../components/narrative.jsx';
+import { SectionTitle, Concept, MacroPanel, Sig, SourceTag } from '../components/narrative.jsx';
 import { welch, propTest, anova } from '../lib/stats.js';
 import { churnBattery } from '../lib/analyses.js';
 import { describeIssues, churnRate, mean, sum, pearson, groupBy, fmtPct, fmtInt, fmtNum, fmtINRShort, TIERS, GENDERS, AGE_BRACKETS, INCOME_Q } from '../lib/data.js';
@@ -31,7 +31,7 @@ export default function SummaryTab({ rows, goTo, assume, dropped = 0, issues, is
     },
     {
       tab: 'prime', q: 'Q2 Prime',
-      t: <>No significant Prime difference is detected in Pay frequency ({fmtNum(s.pTx.mb, 1)} vs {fmtNum(s.pTx.ma, 1)} txns/mo, <Sig p={s.pTx.p} />) or churn ({fmtPct(s.pChurn.pb)} vs {fmtPct(s.pChurn.pa)}, <Sig p={s.pChurn.p} />). That is not proof of zero effect, and membership is self-selected, so no causal claim; it does suggest the <Concept name="Carrot-and-Stick" /> is not visibly tied to the wallet. Test Pay-linked Prime benefits.</>,
+      t: <>No significant Prime difference is detected in Pay frequency ({fmtNum(s.pTx.mb, 1)} vs {fmtNum(s.pTx.ma, 1)} txns/mo, <Sig p={s.pTx.p} />) or churn ({fmtPct(s.pChurn.pb)} vs {fmtPct(s.pChurn.pa)}, <Sig p={s.pChurn.p} />). That is not proof of zero effect, and membership is self-selected, so no causal claim. Whether Prime's <Concept name="Carrot-and-Stick" /> reaches the wallet is a hypothesis the CSV cannot test; a Pay-linked Prime benefit with a holdout would.</>,
     },
     {
       tab: 'ltv', q: 'Q3 LTV',
@@ -50,68 +50,49 @@ export default function SummaryTab({ rows, goTo, assume, dropped = 0, issues, is
   return (
     <>
       <div className="hero">
-        <Card>
-          <SourceLine />
-          <div className="hero-num" style={{ marginTop: 6 }}>The Red Pill</div>
-          <p className="lede" style={{ marginTop: 10 }}>
-            The <Concept name="Red Pill vs Blue Pill">blue-pill</Concept> narrative says Prime locks users in, cashback builds habits and the right demographics carry value.
-            The 5,000-user sample says otherwise: <b>no recorded attribute explains churn, Prime shows no detectable link to Pay usage, and cashback utilisation shows no detectable link to behaviour</b> (associations, not causal tests), while
-            <b> {fmtPct(s.top20, 0)} of transaction throughput sits with 20% of users</b>. The evidence points less to too little cashback than to <b>cashback that is not targeted</b>, a hypothesis to test.
-          </p>
-          {isFiltered && <p className="lede" style={{ fontSize: 12, color: 'var(--text-muted)' }}>This headline describes the full 5,000-user sample. The findings and figures below follow your active filters.</p>}
-          <p className="lede">
-            Strategy in one line, to be validated by experiment: <b>stop paying for transactions, start paying for habits, and protect high-throughput users.</b>
-          </p>
-        </Card>
-        <Card title="Data integrity check" subtitle="Read before quoting rupee figures">
-          <div className="stats">
-            <div className="stat"><span>Rows analysed</span><b>{fmtInt(rows.length)}</b><small>14 columns validated{dropped ? ` · ${fmtInt(dropped)} rows dropped (${describeIssues(issues)})` : '; no duplicate IDs, out-of-range values or unknown categories'}</small></div>
-            <div className="stat"><span>Implied spend &gt; income</span><b>{fmtPct(s.overSpend / rows.length, 0)}</b><small>{fmtInt(s.overSpend)} users</small></div>
-          </div>
-          <Callout tone="warn" title="Treat ₹ as an index">
-            Implied monthly GMV (txns × ticket) exceeds stated monthly income for {fmtPct(s.overSpend / rows.length, 0)} of users, and features are near-independent, which is typical of a synthetic case dataset.
-            We therefore use <b>relative</b> comparisons (shares, ratios, ranks, p-values) for conclusions and present ₹ LTV as a <b>throughput index</b>, not literal rupees.
-          </Callout>
-        </Card>
-      </div>
-
-      <SectionTitle title="Five findings, one per case question" />
-      <Card>
-        {findings.map((f, i) => (
-          <div className="finding" key={f.q}>
-            <span className="fn">{i + 1}</span>
-            <div>
-              <b>{f.q}.</b> {f.t}{' '}
-              <button className="toggle-table" onClick={() => goTo(f.tab)}>Open analysis →</button>
+        <Card title="Five findings, one per case question" subtitle="Each line is computed from the rows in the current filter and links to its analysis." actions={<SourceTag />}>
+          {findings.map((f) => (
+            <div className="finding" key={f.q}>
+              <span className="fn">{f.q}</span>
+              <div>
+                {f.t}{' '}
+                <button className="toggle-table" onClick={() => goTo(f.tab)}>Open {f.q.replace(/^Q\d /, '').toLowerCase()} analysis</button>
+              </div>
             </div>
-          </div>
-        ))}
-      </Card>
-
-      <div className="grid g2" style={{ marginTop: 14 }}>
-        <MacroPanel
-          title="Market backdrop: UPI & the wallet war"
-          items={[
-            <>UPI processes roughly <b>20 billion transactions a month</b> (NPCI, 2025), making it India's default retail payment rail.</>,
-            <><b>PhonePe + Google Pay ≈ 80%+</b> of UPI volume; Amazon Pay is a low-single-digit-share player fighting for the default slot.</>,
-            <><b>Zero MDR on UPI P2M</b>: no direct take on core UPI flow; profits come from cards/credit, bill-pay, merchant services and Amazon commerce.</>,
-            <>Implication: Amazon Pay cannot out-subsidise the leaders. It must win on <b>ecosystem integration</b> (Prime + Amazon checkout + bills).</>,
-          ]}
-        />
-        <MacroPanel
-          title="Prime as a carrot-and-stick machine"
-          items={[
-            <><b>Carrot:</b> free fast delivery, Prime Video/Music, deal early access, higher Amazon Pay ICICI card rewards for Prime members.</>,
-            <><b>Stick:</b> an annual fee (~₹1,499) creates <Concept name="Sunk Cost Fallacy">sunk-cost</Concept> pressure and <Concept name="Loss Aversion">loss-averse</Concept> renewal.</>,
-            <>Global evidence links paid membership to higher shopping frequency. In the CSV, that effect shows <b>no detectable</b> spill-over into Amazon Pay usage (an association; not proof of zero effect).</>,
-            <>Opportunity: make Pay the <b>engine of Prime value</b> (Pay-earned Prime credits, Prime-only bill-pay perks).</>,
-          ]}
-        />
+          ))}
+        </Card>
+        <div style={{ display: 'grid', gap: 'var(--gap)' }}>
+          <Card title="What it adds up to" actions={<SourceTag />}>
+            <p className="lede" style={{ marginTop: 0 }}>
+              The common story is that Prime locks users in, cashback builds habits and the right demographics carry value.
+              In the data, <b>no recorded attribute explains churn, Prime shows no detectable link to Pay usage, and cashback utilisation shows no detectable link to behaviour</b> (associations, not causal tests), while
+              <b> {fmtPct(s.top20, 0)} of transaction throughput sits with 20% of users</b>.
+            </p>
+            {isFiltered && <p className="lede" style={{ fontSize: 13, color: 'var(--text-muted)' }}>This paragraph describes the full 5,000-customer sample; the findings beside it follow your filters.</p>}
+            <p className="lede" style={{ marginBottom: 0 }}>
+              To validate by experiment: <b>stop paying for transactions, start paying for habits, and protect high-throughput users.</b>
+            </p>
+          </Card>
+          <Card title="Data integrity" subtitle="Read before quoting rupee figures">
+            <div className="stats">
+              <div className="stat"><span>Rows analysed</span><b>{fmtInt(rows.length)}</b><small>14 columns validated{dropped ? ` · ${fmtInt(dropped)} rows dropped (${describeIssues(issues)})` : '; no duplicates or out-of-range values'}</small></div>
+              <div className="stat"><span>Implied spend above income</span><b>{fmtPct(s.overSpend / rows.length, 0)}</b><small>{fmtInt(s.overSpend)} customers</small></div>
+            </div>
+            <Callout tone="warn" title="Rupees are an index">
+              Implied monthly GMV exceeds stated income for {fmtPct(s.overSpend / rows.length, 0)} of customers, typical of a synthetic case dataset, so conclusions rest on shares, ratios, ranks and p-values.
+            </Callout>
+          </Card>
+          <MacroPanel
+            title="Market backdrop: UPI and the wallet war"
+            items={[
+              <>UPI processes roughly <b>20 billion transactions a month</b> (NPCI, 2025), India's default retail payment rail.</>,
+              <><b>PhonePe and Google Pay hold about 80%+</b> of UPI volume; Amazon Pay is a low-single-digit-share player.</>,
+              <><b>Zero MDR on UPI merchant payments</b>: margin comes from cards, credit, bill-pay and Amazon commerce, so Amazon Pay cannot out-subsidise the leaders.</>,
+            ]}
+          />
+        </div>
       </div>
+
     </>
   );
-}
-
-function SourceLine() {
-  return <span className="src-tag sample">5,000-User Sample Analytics · Executive synthesis</span>;
 }
