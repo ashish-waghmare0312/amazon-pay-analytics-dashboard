@@ -4,7 +4,13 @@ import {
   churnRate, zVsRest, groupBy, TIERS, GENDERS, AGE_BRACKETS, INCOME_Q, TENURE_BANDS, ENG_BUCKETS, NPS_BUCKETS, CB_TIERS,
 } from './data.js';
 
-export const DEFAULT_ASSUMPTIONS = { take: 0.6, cbRate: 0.4, cbCut: 60, engHi: 7, engLo: 4 };
+export const DEFAULT_ASSUMPTIONS = { take: 0.6, cbRate: 0.4, cbCut: 60, engHi: 7, engLo: 4, windowMonths: 12 };
+
+/**
+ * The CSV's churn flag has no stated observation window. Scenario maths needs an annual rate, so we
+ * ASSUME the flag covers `windowMonths` and convert: annual = 1 − (1 − churn)^(12 / windowMonths).
+ */
+export const annualAttrition = (churn, windowMonths = 12) => (Number.isFinite(churn) ? 1 - (1 - churn) ** (12 / windowMonths) : NaN);
 
 export const CHURN_FEATURES = [
   { k: 'age', label: 'Age' },

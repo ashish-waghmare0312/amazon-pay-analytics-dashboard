@@ -3,10 +3,10 @@ import { Card, Callout } from '../components/ui.jsx';
 import { SectionTitle, Concept, MacroPanel, Sig } from '../components/narrative.jsx';
 import { welch, propTest, anova } from '../lib/stats.js';
 import { churnBattery } from '../lib/analyses.js';
-import { churnRate, mean, sum, pearson, groupBy, fmtPct, fmtInt, fmtNum, fmtINRShort, TIERS, GENDERS, AGE_BRACKETS, INCOME_Q } from '../lib/data.js';
+import { describeIssues, churnRate, mean, sum, pearson, groupBy, fmtPct, fmtInt, fmtNum, fmtINRShort, TIERS, GENDERS, AGE_BRACKETS, INCOME_Q } from '../lib/data.js';
 import { personaOf } from './CashbackTab.jsx';
 
-export default function SummaryTab({ rows, goTo, assume, dropped = 0, isFiltered }) {
+export default function SummaryTab({ rows, goTo, assume, dropped = 0, issues, isFiltered }) {
   const s = useMemo(() => {
     const bat = churnBattery(rows);
     const prime = rows.filter((r) => r.prime), non = rows.filter((r) => !r.prime);
@@ -27,23 +27,23 @@ export default function SummaryTab({ rows, goTo, assume, dropped = 0, isFiltered
   const findings = [
     {
       tab: 'churn', q: 'Q1 Churn',
-      t: <>Churn ({fmtPct(churnRate(rows))}) is <b>not profile-driven</b>. {s.bat.sig.length} of {s.bat.total} Welch/χ² tests reach p &lt; .05 (smallest p = {fmtNum(s.bat.minP, 3)}, {s.bat.minLabel}){s.bat.sig.length ? <>: {s.bat.sig.map((x) => x.label).join(', ')}{s.bat.bonf.length ? <>; {s.bat.bonf.map((x) => x.label).join(', ')} survive{s.bat.bonf.length === 1 ? 's' : ''} Bonferroni correction, a segment-specific lead worth testing</> : <>, about what chance alone would produce across {s.bat.total} tests</>}</> : ''}. {s.bat.topGroup && Math.abs(s.bat.topGroup.z) >= 1.96 ? <>The only standout single group is {s.bat.topGroup.dim} = {s.bat.topGroup.key} at {fmtPct(s.bat.topGroup.rate)} churn, but on just n = {fmtInt(s.bat.topGroup.n)}. </> : ''}Retention must become <b>event-triggered</b> (failed payments, refund delays, rival offers).</>,
+      t: <>Churn ({fmtPct(churnRate(rows))}) is <b>not explained by any recorded attribute</b>. {s.bat.sig.length} of {s.bat.total} Welch/χ² tests reach p &lt; .05 (smallest p = {fmtNum(s.bat.minP, 3)}, {s.bat.minLabel}){s.bat.sig.length ? <>: {s.bat.sig.map((x) => x.label).join(', ')}{s.bat.bonf.length ? <>; {s.bat.bonf.map((x) => x.label).join(', ')} survive{s.bat.bonf.length === 1 ? 's' : ''} Bonferroni correction, a segment-specific lead worth testing</> : <>, about what chance alone would produce across {s.bat.total} tests</>}</> : ''}. {s.bat.topGroup && Math.abs(s.bat.topGroup.z) >= 1.96 ? <>The only standout single group is {s.bat.topGroup.dim} = {s.bat.topGroup.key} at {fmtPct(s.bat.topGroup.rate)} churn, but on just n = {fmtInt(s.bat.topGroup.n)}. </> : ''}<i>Hypothesis, not testable with this CSV:</i> churn follows unrecorded experience events (failed payments, refund delays, rival offers), so instrument and test event-triggered saves.</>,
     },
     {
       tab: 'prime', q: 'Q2 Prime',
-      t: <>Prime does <b>not</b> lift Pay frequency ({fmtNum(s.pTx.mb, 1)} vs {fmtNum(s.pTx.ma, 1)} txns/mo, <Sig p={s.pTx.p} />) or loyalty (churn {fmtPct(s.pChurn.pb)} vs {fmtPct(s.pChurn.pa)}, <Sig p={s.pChurn.p} />). The <Concept name="Carrot-and-Stick" /> sits on shopping, not on the wallet: wire Pay usage into Prime benefits.</>,
+      t: <>No significant Prime difference is detected in Pay frequency ({fmtNum(s.pTx.mb, 1)} vs {fmtNum(s.pTx.ma, 1)} txns/mo, <Sig p={s.pTx.p} />) or churn ({fmtPct(s.pChurn.pb)} vs {fmtPct(s.pChurn.pa)}, <Sig p={s.pChurn.p} />). That is not proof of zero effect, and membership is self-selected, so no causal claim; it does suggest the <Concept name="Carrot-and-Stick" /> is not visibly tied to the wallet. Test Pay-linked Prime benefits.</>,
     },
     {
       tab: 'ltv', q: 'Q3 LTV',
-      t: <>Value is <Concept name="Pareto Principle">Pareto-concentrated</Concept>: top 20% of users hold <b>{fmtPct(s.top20, 0)}</b> of the LTV pool. But it is <b>behavioural, not demographic</b>: tier ANOVA p = {fmtNum(s.ltvTier.p, 3)}, η² = {fmtPct(s.ltvTier.eta2, 2)}. Segment by value decile, not by city or income.</>,
+      t: <>Transaction throughput (our LTV proxy: txns × ticket × tenure, not profit) is <Concept name="Pareto Principle">Pareto-concentrated</Concept>: top 20% of users hold <b>{fmtPct(s.top20, 0)}</b> of it. Demographics show no significant association with it (tier ANOVA p = {fmtNum(s.ltvTier.p, 3)}, η² = {fmtPct(s.ltvTier.eta2, 2)}); the proxy tracks behaviour by construction. Rank by throughput decile rather than city or income.</>,
     },
     {
       tab: 'cashback', q: 'Q4 Cashback',
-      t: <>Cashback shows <b>no behavioural return</b> (max |r| with frequency, ticket, engagement, churn = {s.cbR.toFixed(3)}). Mercenary deal-seekers ({fmtInt(s.merc.length)} users, heavy cashback, low engagement) churn at {fmtPct(churnRate(s.merc))} vs {fmtPct(churnRate(s.util))} for utility-led loyalists (<Sig p={s.mu.p} />): the subsidy buys no extra loyalty. Cashback acts as <Concept name="Mental Accounting">free-money</Concept> discounting, not habit formation.</>,
+      t: <>Cashback utilisation shows <b>no detectable association</b> with behaviour (max |r| with frequency, ticket, engagement, churn = {s.cbR.toFixed(3)}); observational data cannot rule out a causal effect. Hypothesised “mercenary” users ({fmtInt(s.merc.length)}, heavy cashback, low engagement; hand-set thresholds) churn at {fmtPct(churnRate(s.merc))} vs {fmtPct(churnRate(s.util))} for utility-led loyalists (<Sig p={s.mu.p} />): no sign that heavier utilisation goes with extra loyalty, consistent with <Concept name="Mental Accounting">free-money</Concept> discounting. A randomised test is needed to establish causality.</>,
     },
     {
       tab: 'offers', q: 'Q5 Offers',
-      t: <>Personalise on <b>value × cashback reliance</b>: status and recognition for whales (<Concept name="Endowment Effect" />), bill/UPI AutoPay habit bridges for the core (<Concept name="Status Quo Bias" />), scratch-card <Concept name="Variable Ratio Reinforcement">variable rewards</Concept> instead of flat cashback, and caps for mercenaries. Fund it by cutting blanket cashback; prove it with A/B holdouts.</>,
+      t: <>Personalise on <b>value × cashback reliance</b>: status and recognition for whales (<Concept name="Endowment Effect" />), bill/UPI AutoPay habit bridges for the core (<Concept name="Status Quo Bias" />), scratch-card <Concept name="Variable Ratio Reinforcement">variable rewards</Concept> instead of flat cashback, and caps for mercenaries. The returns shown are scenario estimates under assumed effects; each play must be proven with an A/B holdout before scaling.</>,
     },
   ];
 
@@ -55,17 +55,17 @@ export default function SummaryTab({ rows, goTo, assume, dropped = 0, isFiltered
           <div className="hero-num" style={{ marginTop: 6 }}>The Red Pill</div>
           <p className="lede" style={{ marginTop: 10 }}>
             The <Concept name="Red Pill vs Blue Pill">blue-pill</Concept> narrative says Prime locks users in, cashback builds habits and the right demographics carry value.
-            The 5,000-user sample says otherwise: <b>churn is demographically random, Prime doesn't move the wallet, and cashback buys no behaviour</b>, while
-            <b> {fmtPct(s.top20, 0)} of value sits with 20% of users</b>. Amazon Pay's problem is not too little cashback; it is <b>cashback aimed at the wrong people for the wrong reason</b>.
+            The 5,000-user sample says otherwise: <b>no recorded attribute explains churn, Prime shows no detectable link to Pay usage, and cashback utilisation shows no detectable link to behaviour</b> (associations, not causal tests), while
+            <b> {fmtPct(s.top20, 0)} of transaction throughput sits with 20% of users</b>. The evidence points less to too little cashback than to <b>cashback that is not targeted</b>, a hypothesis to test.
           </p>
           {isFiltered && <p className="lede" style={{ fontSize: 12, color: 'var(--text-muted)' }}>This headline describes the full 5,000-user sample. The findings and figures below follow your active filters.</p>}
           <p className="lede">
-            Strategy in one line: <b>stop paying for transactions, start paying for habits, and protect value, not demographics.</b>
+            Strategy in one line, to be validated by experiment: <b>stop paying for transactions, start paying for habits, and protect high-throughput users.</b>
           </p>
         </Card>
         <Card title="Data integrity check" subtitle="Read before quoting rupee figures">
           <div className="stats">
-            <div className="stat"><span>Rows analysed</span><b>{fmtInt(rows.length)}</b><small>14 columns validated{dropped ? ` · ${fmtInt(dropped)} invalid rows dropped` : ', no invalid rows'}</small></div>
+            <div className="stat"><span>Rows analysed</span><b>{fmtInt(rows.length)}</b><small>14 columns validated{dropped ? ` · ${fmtInt(dropped)} rows dropped (${describeIssues(issues)})` : '; no duplicate IDs, out-of-range values or unknown categories'}</small></div>
             <div className="stat"><span>Implied spend &gt; income</span><b>{fmtPct(s.overSpend / rows.length, 0)}</b><small>{fmtInt(s.overSpend)} users</small></div>
           </div>
           <Callout tone="warn" title="Treat ₹ as an index">
@@ -103,7 +103,7 @@ export default function SummaryTab({ rows, goTo, assume, dropped = 0, isFiltered
           items={[
             <><b>Carrot:</b> free fast delivery, Prime Video/Music, deal early access, higher Amazon Pay ICICI card rewards for Prime members.</>,
             <><b>Stick:</b> an annual fee (~₹1,499) creates <Concept name="Sunk Cost Fallacy">sunk-cost</Concept> pressure and <Concept name="Loss Aversion">loss-averse</Concept> renewal.</>,
-            <>Global evidence links paid membership to higher shopping frequency. The CSV shows that effect does <b>not</b> spill into Amazon Pay usage on its own.</>,
+            <>Global evidence links paid membership to higher shopping frequency. In the CSV, that effect shows <b>no detectable</b> spill-over into Amazon Pay usage (an association; not proof of zero effect).</>,
             <>Opportunity: make Pay the <b>engine of Prime value</b> (Pay-earned Prime credits, Prime-only bill-pay perks).</>,
           ]}
         />

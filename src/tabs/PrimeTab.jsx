@@ -61,7 +61,7 @@ export default function PrimeTab({ rows }) {
       {both && (
         <PillContrast
           blue={<>“Prime is the ultimate <Concept name="Carrot-and-Stick" /> moat: the annual fee creates <Concept name="Sunk Cost Fallacy">sunk-cost</Concept> lock-in, so Prime members pay more often and churn less.”</>}
-          red={<>Prime members transact <b>{fmtNum(tests[0].mb, 1)}</b> vs <b>{fmtNum(tests[0].ma, 1)}</b> times a month and churn at <b>{fmtPct(churnT.pb)}</b> vs <b>{fmtPct(churnT.pa)}</b> (p = {fmtP(churnT.p)}). {sigTests.length === 0 ? 'No metric differs significantly.' : <>{sigTests.length} metric(s) differ significantly ({sigTests.map((t) => `${t.label}: ${t.mb > t.ma ? 'Prime higher' : 'Prime lower'}`).join('; ')}).</>} {churnT.p < 0.05 && churnT.diff < 0 ? 'Prime does protect retention in this view, but ' : ''}Prime's carrot lands on <b>Amazon shopping</b>, not on <b>Amazon Pay</b>: the stick (losing free delivery) never touches the payment habit. The Prime moat is real but <b>not wired into the wallet</b>.</>}
+          red={<>Prime members transact <b>{fmtNum(tests[0].mb, 1)}</b> vs <b>{fmtNum(tests[0].ma, 1)}</b> times a month and churn at <b>{fmtPct(churnT.pb)}</b> vs <b>{fmtPct(churnT.pa)}</b> (p = {fmtP(churnT.p)}). {sigTests.length === 0 ? 'No metric differs significantly.' : <>{sigTests.length} metric(s) differ significantly ({sigTests.map((t) => `${t.label}: ${t.mb > t.ma ? 'Prime higher' : 'Prime lower'}`).join('; ')}).</>} {churnT.p < 0.05 && churnT.diff < 0 ? 'Prime members churn less in this view (an association, not proof Prime causes it). ' : ''}A non-significant result is <b>not proof of no effect</b>, and Prime members self-select, so none of this is causal. One reading consistent with the data: Prime's carrot lands on <b>Amazon shopping</b>, not on <b>Amazon Pay</b>: the stick (losing free delivery) is not tied to the payment habit. If that reading holds, the Prime moat is <b>not yet wired into the wallet</b>, a hypothesis to test with Pay-linked Prime benefits.</>}
         />
       )}
 
@@ -163,7 +163,7 @@ export default function PrimeTab({ rows }) {
         <Legend items={[{ label: 'Prime', color: C.s1 }, { label: 'Non-Prime', color: C.s2 }, { label: 'Dashed = overall churn', color: 'var(--text-secondary)' }]} />
         <Callout tone="info" title="Reading it">
           {cutData.filter((d) => d.p < 0.05).length === 0
-            ? <>In no {cutDef.label.toLowerCase()} stratum does Prime significantly reduce churn. If anything Prime churn runs {fmtNum(Math.abs(churnT.diff * 100), 1)} pp {churnT.diff >= 0 ? 'higher' : 'lower'} overall (not significant), consistent with Prime members multi-homing across wallets: they come for Amazon, not for Amazon Pay.</>
+            ? <>In no {cutDef.label.toLowerCase()} stratum does Prime significantly reduce churn. If anything Prime churn runs {fmtNum(Math.abs(churnT.diff * 100), 1)} pp {churnT.diff >= 0 ? 'higher' : 'lower'} overall (not significant), one possible explanation (untested here) is that Prime members multi-home across wallets.</>
             : <>Prime shifts churn significantly in: {cutData.filter((d) => d.p < 0.05).map((d) => `${d.name} (${d.gap >= 0 ? '+' : '−'}${Math.abs(d.gap * 100).toFixed(1)} pp)`).join(', ')}. Treat as hypotheses to A/B test.</>}
         </Callout>
       </Card>
@@ -174,7 +174,7 @@ export default function PrimeTab({ rows }) {
           items={[
             <><b>Carrot:</b> Amazon Pay ICICI credit card gives Prime members a higher reward rate on Amazon (5% vs 3% for non-Prime); Prime-exclusive deal windows (Prime Day, early access).</>,
             <><b>Stick:</b> lapse means losing free/fast delivery, Prime Video and Music. <Concept name="Loss Aversion" /> and the <Concept name="Sunk Cost Fallacy">sunk-cost</Concept> of a ~₹1,499 annual fee keep members shopping on Amazon.</>,
-            <><b>The gap:</b> none of these sticks are tied to <i>paying with Amazon Pay</i> off-Amazon (UPI scan-and-pay, bills). The CSV confirms it: Prime does not move Pay frequency.</>,
+            <><b>The gap:</b> none of these sticks are tied to <i>paying with Amazon Pay</i> off-Amazon (UPI scan-and-pay, bills). The CSV is consistent with this: no significant Prime difference in Pay frequency (which is not proof of zero effect).</>,
             <><b>Fix:</b> make Pay usage a visible Prime benefit: “Prime Pay” streak rewards, bill-pay cashback only for Prime, Prime renewal credit earned through Pay spend (<Concept name="Endowment Effect" />).</>,
           ]}
         />

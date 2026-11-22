@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   EMBEDDED_CSV, loadDataset, applyFilters, DEFAULT_FILTERS, AGE_BRACKETS, INCOME_Q,
-  mean, sum, churnRate, fmtInt, fmtPct, fmtNum, fmtINR, fmtINRShort,
+  mean, sum, churnRate, describeIssues, fmtInt, fmtPct, fmtNum, fmtINR, fmtINRShort,
 } from './lib/data.js';
 import { Segmented } from './components/ui.jsx';
 import { DEFAULT_ASSUMPTIONS } from './lib/analyses.js';
@@ -17,7 +17,7 @@ const TABS = [
   { id: 'summary', label: 'Red Pill Summary', q: 'Executive synthesis: the comfortable averages vs the segmented truth' },
   { id: 'churn', label: 'Churn & Risk', q: 'Q1 · What factors most strongly influence churn?' },
   { id: 'prime', label: 'Prime & UPI', q: 'Q2 · How does Prime affect transaction frequency and loyalty?' },
-  { id: 'ltv', label: 'LTV & Segments', q: 'Q3 · Which customer segments deliver the highest lifetime value?' },
+  { id: 'ltv', label: 'LTV Proxy & Segments', q: 'Q3 · Which customer segments deliver the highest lifetime value?' },
   { id: 'cashback', label: 'Cashback Lab', q: 'Q4 · Is cashback driving real engagement or only deal-seeking?' },
   { id: 'offers', label: 'Offer Strategy Lab', q: 'Q5 · How can Amazon Pay personalise offers to improve retention?' },
   { id: 'blueprint', label: 'Blueprint', q: 'Question → columns → methods → behavioural lens' },
@@ -65,7 +65,7 @@ function KpiStrip({ rows, base }) {
     { label: 'Avg Txn Value', value: fmtINR(cur.atv), d: delta(cur.atv, all.atv) },
     { label: 'Implied Monthly GMV', value: fmtINRShort(cur.gmv), d: filtered ? delta(cur.gmv, all.gmv, 'share') : `${fmtINR(cur.gmv / cur.n)} per customer` },
     { label: 'Mean NPS', value: fmtNum(cur.nps), d: delta(cur.nps, all.nps, 'abs') },
-    { label: 'Avg Cashback Used', value: `${fmtNum(cur.cb)}%`, d: delta(cur.cb, all.cb, 'abs') },
+    { label: 'Avg Cashback Utilisation', value: `${fmtNum(cur.cb)}%`, d: delta(cur.cb, all.cb, 'abs') },
   ];
   return (
     <div className="kpis">
@@ -120,7 +120,7 @@ export default function App() {
   };
 
   const current = TABS.find((t) => t.id === tab) || TABS[0];
-  const props = { rows, base: dataset.rows, filters, assume, setAssume, dropped: dataset.dropped, isFiltered: rows.length !== dataset.rows.length };
+  const props = { rows, base: dataset.rows, filters, assume, setAssume, dropped: dataset.dropped, issues: dataset.issues, isFiltered: rows.length !== dataset.rows.length };
 
   return (
     <div className="app">
@@ -133,7 +133,7 @@ export default function App() {
           </div>
         </div>
         <div className="top-actions">
-          <span className="source" title={source.name}>
+          <span className="source" title={dataset.dropped ? `${source.name}: dropped ${describeIssues(dataset.issues)}` : source.name}>
             <i className="dot" /> {source.name} · {fmtInt(dataset.rows.length)} rows{dataset.dropped ? ` · ${dataset.dropped} dropped` : ''}
           </span>
           <input ref={fileRef} type="file" accept=".csv,text/csv" hidden onChange={onFile} />
@@ -188,7 +188,7 @@ export default function App() {
         )}
       </main>
       <footer>
-        Blue tags = 5,000-User Sample Analytics (computed live from the CSV and filters). Green tags = Macro / Industry Context (external, approximate, as of 2025). Implied monthly GMV = avg monthly transactions × avg transaction value; LTV proxy = GMV × tenure. Churn flag treated as annual attrition in forward-value maths.
+        Blue tags = 5,000-User Sample Analytics (computed live from the CSV and filters). Green tags = Macro / Industry Context (external, approximate, as of 2025). Implied monthly GMV = avg monthly transactions × avg transaction value; throughput proxy = GMV × tenure. Scenario maths (amber tags) converts the churn flag to annual attrition under an assumed observation window; the CSV does not state one. Throughput proxy = cumulative transaction value, not profit or true lifetime value; cashback utilisation % is not rupee spend.
         Simulator and calculator outputs are scenario estimates built on stated assumptions, not forecasts.
       </footer>
     </div>

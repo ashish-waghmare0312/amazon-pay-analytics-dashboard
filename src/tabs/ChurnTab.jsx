@@ -8,7 +8,7 @@ import {
   churnRate, mean, sd, pearson, binProfile, zVsRest, groupBy, fmtPct, fmtInt, fmtNum,
   TIERS, GENDERS, NPS_BUCKETS, ENG_BUCKETS, AGE_BRACKETS, CB_TIERS, INCOME_Q, TENURE_BANDS,
 } from '../lib/data.js';
-import { fmtP } from '../lib/stats.js';
+import { fmtP, normCdf, bhAdjust, pearsonRCrit } from '../lib/stats.js';
 import { churnBattery, CHURN_FEATURES } from '../lib/analyses.js';
 import { PillContrast, SectionTitle, Concept, Sig } from '../components/narrative.jsx';
 
@@ -51,6 +51,10 @@ function findPockets(rows) {
       }
     }
   }
+  // Two-sided p per pocket, then Benjamini-Hochberg FDR across every pocket tested.
+  out.forEach((o) => { o.p = 2 * (1 - normCdf(Math.abs(o.z))); });
+  const q = bhAdjust(out.map((o) => o.p));
+  out.forEach((o, i) => { o.q = q[i]; });
   return { list: out, tested, base, minN };
 }
 
@@ -59,12 +63,12 @@ export default function ChurnTab({ rows }) {
   const [pocketDir, setPocketDir] = useState('High risk');
 
   const splits = useMemo(() => [
-    { title: 'By city tier', x: 'City tier', data: rateRows(rows, (r) => r.tier, TIERS) },
-    { title: 'By gender', x: 'Gender', data: rateRows(rows, (r) => r.gender, GENDERS) },
-    { title: 'By Prime status', x: 'Membership', data: rateRows(rows, (r) => r.primeLabel, ['Prime', 'Non-Prime']) },
-    { title: 'By NPS bucket', x: 'Net promoter score', data: rateRows(rows, (r) => r.npsB, NPS_BUCKETS) },
-    { title: 'By engagement bucket', x: 'App engagement score', data: rateRows(rows, (r) => r.engB, ENG_BUCKETS) },
-    { title: 'By age bracket', x: 'Age', data: rateRows(rows, (r) => r.ageB, AGE_BRACKETS) },
+    { title: 'By city tier', fn: (r) => r.tier, x: 'City tier', data: rateRows(rows, (r) => r.tier, TIERS) },
+    { title: 'By gender', fn: (r) => r.gender, x: 'Gender', data: rateRows(rows, (r) => r.gender, GENDERS) },
+    { title: 'By Prime status', fn: (r) => r.primeLabel, x: 'Membership', data: rateRows(rows, (r) => r.primeLabel, ['Prime', 'Non-Prime']) },
+    { title: 'By NPS bucket', fn: (r) => r.npsB, x: 'Net promoter score', data: rateRows(rows, (r) => r.npsB, NPS_BUCKETS) },
+    { title: 'By engagement bucket', fn: (r) => r.engB, x: 'App engagement score', data: rateRows(rows, (r) => r.engB, ENG_BUCKETS) },
+    { title: 'By age bracket', fn: (r) => r.ageB, x: 'Age', data: rateRows(rows, (r) => r.ageB, AGE_BRACKETS) },
   ], [rows]);
 
   // Strongest single split: largest |z| among all groups shown
@@ -72,13 +76,18 @@ export default function ChurnTab({ rows }) {
     let best = null;
     const all = [];
     splits.forEach((s) => s.data.forEach((d) => {
-      const sub = rows.filter((r) => [r.tier, r.gender, r.primeLabel, r.npsB, r.engB, r.ageB].includes(d.name));
+      // Explicit attribute-specific filter: only this split's own column is matched.
+      const sub = rows.filter((r) => String(s.fn(r)) === String(d.name));
       const z = zVsRest(sub, rows);
-      all.push({ ...d, z, split: s.title });
+      all.push({ ...d, z, p: 2 * (1 - normCdf(Math.abs(z))), split: s.title });
       if (!best || Math.abs(z) > Math.abs(best.z)) best = { ...d, z, split: s.title };
     }));
+    const q = bhAdjust(all.map((d) => d.p));
+    all.forEach((d, i) => { d.q = q[i]; });
     const range = Math.max(...all.map((d) => Math.abs(d.rate - base)));
-    return { best, range, sig: all.filter((d) => Math.abs(d.z) >= 1.96 && d.n >= 30).length, total: all.length };
+    const sigRaw = all.filter((d) => d.p < 0.05 && d.n >= 30);
+    const sigFdr = all.filter((d) => d.q < 0.05 && d.n >= 30);
+    return { best, range, sig: sigRaw.length, sigFdr, total: all.length };
   }, [splits, rows, base]);
 
   const battery = useMemo(() => churnBattery(rows), [rows]);
@@ -87,7 +96,7 @@ export default function ChurnTab({ rows }) {
   const hasBoth = rows.some((r) => r.churned) && rows.some((r) => !r.churned);
 
   const importance = useMemo(() => {
-    const sigR = 1.96 / Math.sqrt(rows.length);
+    const sigR = pearsonRCrit(rows.length); // exact two-sided t-test threshold on r, df = n - 2
     const list = CHURN_FEATURES.map(({ k, label }) => {
       const r = pearson(rows, k, 'churned');
       const { spread, mi } = binProfile(rows, k);
@@ -101,8 +110,9 @@ export default function ChurnTab({ rows }) {
     const l = [...pockets.list].sort((a, b) => (pocketDir === 'High risk' ? b.z - a.z : a.z - b.z));
     return l.slice(0, 10);
   }, [pockets, pocketDir]);
-  const sigPockets = pockets.list.filter((p) => p.z >= 1.96).length;
-  const expectedByChance = Math.round(pockets.tested * 0.025);
+  const rawPockets = pockets.list.filter((p) => p.p < 0.05).length;
+  const fdrPockets = pockets.list.filter((p) => p.q < 0.05);
+  const expectedByChance = Math.round(pockets.tested * 0.05);
 
   const maxAbsR = importance.list[0]?.absR || 0;
   const topSpread = importance.spreadSorted[0];
@@ -115,7 +125,7 @@ export default function ChurnTab({ rows }) {
       </SectionTitle>
       <PillContrast
         blue={<>“Churners are the disengaged, unhappy, high-support users. Fix NPS and support and churn falls.” The textbook <Concept name="Habit Loop">broken-habit-loop</Concept> story.</>}
-        red={<>In {rows.length === 5000 ? 'this sample' : 'this filtered view'}, <b>{sigCount === 0 ? 'none' : `only ${sigCount}`}</b> of {battery.total} tests reach p &lt; .05{sigCount > 0 ? <> ({battery.sig.map((x) => x.label).join(', ')}; ~{fmtNum(battery.total * 0.05, 0)} false positive{Math.round(battery.total * 0.05) === 1 ? ' is' : 's are'} expected by chance{battery.bonf.length ? <>, but <b>{battery.bonf.map((x) => x.label).join(', ')}</b> survive{battery.bonf.length === 1 ? 's' : ''} Bonferroni correction and merit{battery.bonf.length === 1 ? 's' : ''} a closer look in this segment</> : ', so treat them as hypotheses'})</> : ''}. {sigCount === 0 ? 'Churned users have the same engagement, NPS, support load, tenure and income as active ones.' : 'Everything else looks the same for churned and active users.'} Churn is <b>event-driven, not profile-driven</b>: the trigger (a failed UPI payment, a rival's cashback, an unresolved refund) is not in the CSV. Targeting by demographics is <Concept name="Red Pill vs Blue Pill">blue-pill</Concept> comfort.</>}
+        red={<>In {rows.length === 5000 ? 'this sample' : 'this filtered view'}, <b>{sigCount === 0 ? 'none' : `only ${sigCount}`}</b> of {battery.total} tests reach p &lt; .05{sigCount > 0 ? <> ({battery.sig.map((x) => x.label).join(', ')}; ~{fmtNum(battery.total * 0.05, 0)} false positive{Math.round(battery.total * 0.05) === 1 ? ' is' : 's are'} expected by chance{battery.bonf.length ? <>, but <b>{battery.bonf.map((x) => x.label).join(', ')}</b> survive{battery.bonf.length === 1 ? 's' : ''} Bonferroni correction and merit{battery.bonf.length === 1 ? 's' : ''} a closer look in this segment</> : ', so treat them as hypotheses'})</> : ''}. {sigCount === 0 ? 'Churned users have the same engagement, NPS, support load, tenure and income as active ones.' : 'Everything else looks the same for churned and active users.'} Churn is <b>not explained by any attribute recorded in the CSV</b>. A plausible hypothesis, <i>not testable with this data</i>, is that churn follows experience events the dataset does not capture (failed payments, refund delays, rival offers). Targeting on demographics alone is <Concept name="Red Pill vs Blue Pill">blue-pill</Concept> comfort.</>}
       />
       <div className="grid g3">
         {splits.map((s) => (
@@ -129,8 +139,8 @@ export default function ChurnTab({ rows }) {
           Every split sits within ±{(splitInsight.range * 100).toFixed(1)} pp of the {fmtPct(base)} average{splitInsight.sig === 0 ? ', and every 95% interval (hover a bar) is consistent with it' : ''}.
           The biggest gap is <b>{splitInsight.best?.name}</b> ({splitInsight.best?.split.replace('By ', '')}) at {fmtPct(splitInsight.best?.rate)} on n = {fmtInt(splitInsight.best?.n)} (z = {fmtNum(splitInsight.best?.z, 2)}).{' '}
           {splitInsight.sig === 0
-            ? 'No single demographic or behavioural group is significantly different from the rest at the 95% level, so churn can’t be pinned on one attribute.'
-            : `${splitInsight.sig} of ${splitInsight.total} groups clear |z| ≥ 1.96. Treat them as hypotheses, because some will clear that bar by chance when this many groups are tested.`}
+            ? 'No single group differs significantly from the rest at the 95% level (uncorrected), so churn can’t be pinned on one attribute in this data.'
+            : <>{splitInsight.sig} of {splitInsight.total} groups {splitInsight.sig === 1 ? 'reaches' : 'reach'} uncorrected p &lt; .05; after Benjamini–Hochberg FDR correction across all {splitInsight.total}, {splitInsight.sigFdr.length === 0 ? 'none remain significant' : `${splitInsight.sigFdr.length} remain (${splitInsight.sigFdr.map((d) => d.name).join(', ')})`}. Exploratory: treat as hypotheses to test.</>}
         </Callout>
       )}
 
@@ -176,7 +186,7 @@ export default function ChurnTab({ rows }) {
                     <td>{d.label}</td>
                     <td>{fmtVal(d.k, d.active)}</td>
                     <td>{fmtVal(d.k, d.churned)}</td>
-                    <td className={Math.abs(d.t) >= 1.96 ? (d.diffPct > 0 ? 'pos' : 'neg') : 'muted'}>{Number.isFinite(d.diffPct) ? `${d.diffPct > 0 ? '+' : ''}${d.diffPct.toFixed(1)}${d.k === 'nps' ? ' pts' : '%'}` : '–'}</td>
+                    <td className={d.p < 0.05 ? (d.diffPct > 0 ? 'pos' : 'neg') : 'muted'}>{Number.isFinite(d.diffPct) ? `${d.diffPct > 0 ? '+' : ''}${d.diffPct.toFixed(1)}${d.k === 'nps' ? ' pts' : '%'}` : '–'}</td>
                     <td className="muted">{fmtNum(d.d, 3)}</td>
                     <td><Sig p={d.p} /></td>
                   </tr>
@@ -185,9 +195,9 @@ export default function ChurnTab({ rows }) {
             </table>
           </div>
           {hasBoth && (
-            <Callout tone={profile.some((d) => Math.abs(d.t) >= 1.96) ? 'info' : 'warn'} title="Profile read">
-              {profile.some((d) => Math.abs(d.t) >= 1.96)
-                ? `Significant gaps: ${profile.filter((d) => Math.abs(d.t) >= 1.96).map((d) => d.label).join(', ')}. Everything else looks the same for churned and active customers.`
+            <Callout tone={profile.some((d) => d.p < 0.05) ? 'info' : 'warn'} title="Profile read">
+              {profile.some((d) => d.p < 0.05)
+                ? `Significant gaps (Welch p < .05, uncorrected): ${profile.filter((d) => d.p < 0.05).map((d) => d.label).join(', ')}. Everything else looks the same for churned and active customers.`
                 : 'Churned and active customers look statistically the same on every metric. Churn here isn’t explained by who customers are or how much they transact, so the levers are probably experience events this dataset doesn’t capture (failed payments, unresolved tickets, competitor offers).'}
             </Callout>
           )}
@@ -238,13 +248,13 @@ export default function ChurnTab({ rows }) {
       </div>
 
       <Card
-        title="Segment pockets: 2- and 3-way combinations"
-        subtitle={`${fmtInt(pockets.tested)} segments tested (n ≥ ${pockets.minN}). Ranked by z-score vs the rest of the filtered base.`}
+        title="Exploratory segment pockets: 2- and 3-way combinations"
+        subtitle={`${fmtInt(pockets.tested)} segments tested (n ≥ ${pockets.minN}). Ranked by z vs the rest of the filtered base; q = Benjamini–Hochberg FDR-adjusted p across all ${fmtInt(pockets.tested)} tests.`}
         actions={<Segmented value={pocketDir} onChange={setPocketDir} options={['High risk', 'Low risk']} />}
       >
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Segment</th><th>Customers</th><th>Churn rate</th><th>vs avg</th><th>z</th></tr></thead>
+            <thead><tr><th>Segment</th><th>Customers</th><th>Churn rate</th><th>vs avg</th><th>z</th><th>p (raw)</th><th>q (FDR)</th></tr></thead>
             <tbody>
               {pocketList.map((p) => (
                 <tr key={p.name}>
@@ -253,16 +263,19 @@ export default function ChurnTab({ rows }) {
                   <td>{fmtPct(p.rate)}</td>
                   <td className={p.lift > 0 ? 'pos' : 'neg'}>{p.lift > 0 ? '+' : '−'}{Math.abs(p.lift * 100).toFixed(1)} pp</td>
                   <td>{fmtNum(p.z, 2)}</td>
+                  <td className="muted">{fmtP(p.p)}</td>
+                  <td className={p.q < 0.05 ? 'sig' : 'muted'}>{fmtP(p.q)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <Callout tone={sigPockets > expectedByChance * 1.5 ? 'good' : 'warn'} title="Multiple-testing check">
-          {sigPockets} pockets exceed z ≥ 1.96, against about {expectedByChance} that would by chance alone across {fmtInt(pockets.tested)} tests.{' '}
-          {sigPockets > expectedByChance * 1.5
-            ? 'That’s more than chance predicts, so the top pockets are worth targeted A/B retention tests.'
-            : 'That’s roughly what chance predicts. Treat these pockets as places to run test-and-learn experiments, not proven drivers.'}
+        <Callout tone={fdrPockets.length ? 'info' : 'warn'} title="Multiple-testing check">
+          {rawPockets} of {fmtInt(pockets.tested)} pockets reach uncorrected p &lt; .05, against ~{expectedByChance} expected by chance alone.
+          After Benjamini–Hochberg FDR correction, <b>{fdrPockets.length === 0 ? 'none survive' : `${fdrPockets.length} survive (q < .05)`}</b>.{' '}
+          {fdrPockets.length === 0
+            ? 'Treat every pocket here as exploratory: a place to design a test, not evidence of a driver.'
+            : 'Surviving pockets are still exploratory and overlapping; validate them in a held-out sample or A/B test before acting.'}
         </Callout>
       </Card>
       <Card title="χ² tests of independence: categorical driver vs churn" subtitle="Pearson χ² on each categorical/binned driver × churn flag. Cramér's V measures effect size (< 0.1 = negligible).">
@@ -290,9 +303,9 @@ export default function ChurnTab({ rows }) {
           </table>
         </div>
         <Callout tone="warn" title="So what for Amazon Pay">
-          With {chi.filter((c) => c.p < 0.05).length} of {chi.length} categorical drivers significant (smallest p = {fmtP(Math.min(...chi.map((c) => c.p)))}), static segmentation cannot predict who leaves.
-          Shift retention spend from <b>who the customer is</b> to <b>what just happened to them</b>: trigger-based saves on failed transactions, refund delays and competitor-offer windows,
-          framed with <Concept name="Loss Aversion" /> (“your ₹ cashback expires”) rather than generic win-back discounts. Instrument these events; that is the data gap to close.
+          With {chi.filter((c) => c.p < 0.05).length} of {chi.length} categorical drivers significant (smallest p = {fmtP(Math.min(...chi.map((c) => c.p)))}), the recorded attributes do not identify who leaves.
+          <b>Hypothesis to test (not established by this data):</b> churn is triggered by experience events such as failed transactions, refund delays or competitor offers, none of which the CSV records.
+          Next step: instrument those events, then test trigger-based saves (e.g. <Concept name="Loss Aversion" />-framed nudges) against a holdout before shifting retention spend.
         </Callout>
       </Card>
     </>

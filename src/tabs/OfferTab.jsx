@@ -3,7 +3,8 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, LabelList, Cell,
 } from 'recharts';
 import { Card, Callout, Tip, axisProps, axisLabel, Legend, Slider, C } from '../components/ui.jsx';
-import { PillContrast, SectionTitle, Concept, MacroPanel } from '../components/narrative.jsx';
+import { PillContrast, SectionTitle, Concept, MacroPanel, ScenarioNote } from '../components/narrative.jsx';
+import { annualAttrition } from '../lib/analyses.js';
 import { churnRate, mean, sum, fmtPct, fmtInt, fmtNum, fmtINR, fmtINRShort } from '../lib/data.js';
 import { annualMargin } from './LtvTab.jsx';
 
@@ -30,7 +31,7 @@ const PLAYS = {
   },
   'Tail (bottom 30%)|Light cashback': {
     title: 'Friction-reduction nudges', concepts: ['Status Quo Bias', 'Habit Loop'], cost: 30, red: 4, save: 0,
-    how: ['Push/WhatsApp nudges only, no cash: UPI Lite for small payments, one-tap re-pay', 'Fix failed-payment journeys first (event-driven churn)', 'Low-cost reactivation, no subsidy'],
+    how: ['Push/WhatsApp nudges only, no cash: UPI Lite for small payments, one-tap re-pay', 'Fix failed-payment journeys first (hypothesised churn trigger)', 'Low-cost reactivation, no subsidy'],
   },
   'Tail (bottom 30%)|Heavy cashback': {
     title: 'Cap & wean the mercenaries', concepts: ['Diminishing Marginal Utility', 'Mental Accounting'], cost: 0, red: -3, save: 60,
@@ -41,9 +42,9 @@ const PLAYS = {
 const z = { a: 1.96, b: 0.8416 };
 
 export default function OfferTab({ rows, assume, setAssume }) {
-  const { take, cbRate, cbCut } = assume;
+  const { take, cbRate, cbCut, windowMonths } = assume;
   const upd = (k) => (v) => setAssume((a) => ({ ...a, [k]: v }));
-  const setTake = upd('take'), setCbRate = upd('cbRate'), setCbCut = upd('cbCut');
+  const setTake = upd('take'), setCbRate = upd('cbRate'), setCbCut = upd('cbCut'), setWindow = upd('windowMonths');
   const [params, setParams] = useState(() => Object.fromEntries(Object.entries(PLAYS).map(([k, v]) => [k, { cost: v.cost, red: v.red, save: v.save }])));
   const [blanketPct, setBlanketPct] = useState(0.5);
   const [blanketRed, setBlanketRed] = useState(5);
@@ -63,8 +64,9 @@ export default function OfferTab({ rows, assume, setAssume }) {
       const margin = mean(g.map((r) => annualMargin(r, T, CB)));
       const cbCost = g.reduce((acc, r) => acc + r.gmv * 12 * CB * (r.cashback / 100), 0);
       const churn = churnRate(g);
+      const annual = annualAttrition(churn, windowMonths); // assumed annualisation of the churn flag
       const distress = g.filter((r) => r.nps < 0 || r.support >= 7).length;
-      const savedUsers = g.length * churn * (p.red / 100);
+      const savedUsers = g.length * annual * (p.red / 100);
       const retainedValue = savedUsers * (Number.isFinite(margin) ? margin : 0);
       const cbSaving = cbCost * (p.save / 100);
       const offerCost = g.length * p.cost;
@@ -75,7 +77,7 @@ export default function OfferTab({ rows, assume, setAssume }) {
       });
     }
     return out;
-  }, [rows, params, T, CB, cbCut]);
+  }, [rows, params, T, CB, cbCut, windowMonths]);
 
   const top20Share = useMemo(() => { const s = [...rows].sort((a, b) => b.ltv - a.ltv); return sum(s.slice(0, Math.round(s.length * 0.2)), 'ltv') / sum(s, 'ltv'); }, [rows]);
   const tot = cells.reduce((a, c) => ({
@@ -85,10 +87,10 @@ export default function OfferTab({ rows, assume, setAssume }) {
   // Blanket alternative: extra cashback % to everyone, uniform churn reduction.
   const blanket = useMemo(() => {
     const cost = rows.reduce((a, r) => a + r.gmv * 12 * (blanketPct / 100) * (r.cashback / 100), 0);
-    const saved = rows.length * churnRate(rows) * (blanketRed / 100);
+    const saved = rows.length * annualAttrition(churnRate(rows), windowMonths) * (blanketRed / 100);
     const value = saved * mean(rows.map((r) => annualMargin(r, T, CB)));
     return { cost, saved, value, net: value - cost };
-  }, [rows, blanketPct, blanketRed, T, CB]);
+  }, [rows, blanketPct, blanketRed, T, CB, windowMonths]);
 
   // Power analysis for an A/B retention test
   const p1 = churnRate(rows), p2 = Math.max(0.001, p1 - mde / 100);
@@ -100,33 +102,35 @@ export default function OfferTab({ rows, assume, setAssume }) {
   return (
     <>
       <SectionTitle title="Q5 · How can Amazon Pay personalise offers to improve retention?">
-        Segmentation = LTV-proxy rank (value tier) × <code>Cashback used pct</code> (reliance), with an overlay of distress signals (<code>Net promoter score</code> &lt; 0 or <code>Customer support contacts</code> ≥ 7). Methods: value × reliance matrix, scenario P&amp;L, blanket-vs-targeted comparison, A/B power analysis.
+        Segmentation = throughput-proxy rank (value tier) × <code>Cashback used pct</code> (reliance), with an overlay of distress signals (<code>Net promoter score</code> &lt; 0 or <code>Customer support contacts</code> ≥ 7). Methods: value × reliance matrix, scenario P&amp;L, blanket-vs-targeted comparison, A/B power analysis.
       </SectionTitle>
       <PillContrast
         blue={<>“Retention is a cashback problem. Raise the cashback rate for everyone and churn will fall.”</>}
-        red={<>In the full 5,000-user sample, cashback has ~zero elasticity (Q4) and churn is not segment-predictable (Q1), so a blanket rate hike is pure <Concept name="Diminishing Marginal Utility">margin bleed</Concept>. The lever that does vary is <b>value</b> (Q3: top 20% = {fmtPct(top20Share, 0)} of the pool). So personalise on <b>value × reliance</b>: protect whales with status, convert the middle with habits, and wean the mercenaries.</>}
+        red={<>In the full 5,000-user sample, cashback utilisation shows no detectable association with behaviour (Q4) and no recorded attribute explains churn (Q1), so a blanket rate hike has <b>no evidence behind it</b> and a clear cost (<Concept name="Diminishing Marginal Utility" />). What does vary is <b>throughput</b> (Q3: top 20% = {fmtPct(top20Share, 0)} of the pool). So <b>test</b> personalisation on <b>throughput × reliance</b>: status for top users, habit-building for the middle, caps for hypothesised mercenaries.</>}
       />
 
+      <ScenarioNote><b>Illustrative scenario, not a forecast.</b> Churn reductions, offer costs and cashback savings are assumptions you set; none has been measured. Outputs show what would follow <i>if</i> those assumptions held, and each play needs an A/B test before any result is claimed.</ScenarioNote>
       <div className="sim-grid">
         <Card title="Global assumptions" subtitle="Scenario inputs (not CSV facts).">
           <div className="controls">
             <Slider label="Net take rate on GMV" value={take} min={0.1} max={2} step={0.05} onChange={setTake} format={(v) => `${v.toFixed(2)}%`} />
             <Slider label="Current cashback (% of GMV)" value={cbRate} min={0} max={2} step={0.05} onChange={setCbRate} format={(v) => `${v.toFixed(2)}%`} />
             <Slider label="Heavy-reliance threshold" value={cbCut} min={30} max={90} step={5} onChange={setCbCut} format={(v) => `≥ ${v}% used`} />
+            <Slider label="Assumed churn-flag window" value={windowMonths} min={3} max={36} step={3} onChange={setWindow} format={(v) => `${v} months`} hint={`Not stated in the CSV. Annualised churn ≈ ${fmtPct(annualAttrition(p1, windowMonths))}.`} />
           </div>
           <div className="stats" style={{ marginTop: 14 }}>
-            <div className="stat"><span>Targeted plan: net impact / yr</span><b style={{ color: tot.net >= 0 ? 'var(--good-ink)' : 'var(--critical)' }}>{fmtINRShort(tot.net)}</b><small>cost {fmtINRShort(tot.offerCost)} · CB saved {fmtINRShort(tot.cbSaving)}</small></div>
-            <div className="stat"><span>Customers retained</span><b>{fmtInt(tot.savedUsers)}</b><small>churn {fmtPct(p1)} → {fmtPct(p1 - tot.savedUsers / rows.length)}</small></div>
-            <div className="stat"><span>Blanket +{blanketPct}% cashback</span><b style={{ color: blanket.net >= 0 ? 'var(--good-ink)' : 'var(--critical)' }}>{fmtINRShort(blanket.net)}</b><small>cost {fmtINRShort(blanket.cost)} · retains {fmtInt(blanket.saved)}</small></div>
+            <div className="stat"><span>Scenario: targeted plan net / yr</span><b style={{ color: tot.net >= 0 ? 'var(--good-ink)' : 'var(--critical)' }}>{fmtINRShort(tot.net)}</b><small>cost {fmtINRShort(tot.offerCost)} · CB saved {fmtINRShort(tot.cbSaving)}</small></div>
+            <div className="stat"><span>Customers retained if assumptions hold</span><b>{fmtInt(tot.savedUsers)}</b><small>annualised churn {fmtPct(annualAttrition(p1, windowMonths))} → {fmtPct(annualAttrition(p1, windowMonths) - tot.savedUsers / rows.length)}</small></div>
+            <div className="stat"><span>Scenario: blanket +{blanketPct}% cashback</span><b style={{ color: blanket.net >= 0 ? 'var(--good-ink)' : 'var(--critical)' }}>{fmtINRShort(blanket.net)}</b><small>cost {fmtINRShort(blanket.cost)} · would retain {fmtInt(blanket.saved)} at the assumed cut</small></div>
           </div>
           <h4 style={{ margin: '14px 0 6px', fontSize: 13 }}>Blanket alternative</h4>
           <div className="controls">
             <Slider label="Extra cashback to everyone" value={blanketPct} min={0.1} max={2} step={0.1} onChange={setBlanketPct} format={(v) => `${v.toFixed(1)}% of GMV`} />
-            <Slider label="Assumed churn reduction" value={blanketRed} min={0} max={30} onChange={setBlanketRed} format={(v) => `${v}%`} hint="Generous: the CSV shows ~0 elasticity." />
+            <Slider label="Assumed churn reduction" value={blanketRed} min={0} max={30} onChange={setBlanketRed} format={(v) => `${v}%`} hint="An assumption: the CSV shows no detectable association, so any value here is a guess." />
           </div>
         </Card>
 
-        <Card title="Net annual impact by segment" subtitle="Retained margin + cashback savings − offer cost. Edit each segment's levers in the table below.">
+        <Card title="Scenario: net annual impact by segment" subtitle="Retained margin + cashback savings − offer cost, if the assumed effects held. Edit each segment's levers below.">
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={chart} margin={{ top: 18, right: 8, left: 8, bottom: 18 }}>
               <CartesianGrid vertical={false} />
@@ -172,8 +176,8 @@ export default function OfferTab({ rows, assume, setAssume }) {
             </table>
           </div>
           <Callout tone="info" title="How to read">
-            Churn cut = relative reduction in that segment's churn the offer is assumed to achieve. CB saving = share of the segment's current cashback cost removed by restructuring (caps, scratch cards, balance-only payout).
-            Distress = share with NPS &lt; 0 or ≥ 7 support contacts: the event-driven trigger pool for proactive service recovery.
+            Churn cut = relative reduction in that segment's annualised churn the offer is <b>assumed</b> to achieve (not measured). CB saving = share of the segment's current cashback cost removed by restructuring (caps, scratch cards, balance-only payout).
+            Distress = share with NPS &lt; 0 or ≥ 7 support contacts: a candidate pool for proactive service recovery (a hypothesis; neither signal predicts churn in this data).
           </Callout>
         </Card>
       </div>
@@ -192,7 +196,7 @@ export default function OfferTab({ rows, assume, setAssume }) {
       </div>
 
       <div className="grid g2">
-        <Card title="Test before you scale: A/B power analysis" subtitle="Users needed per arm to detect a churn reduction (α = 0.05 two-sided, power = 80%).">
+        <Card title="Test before you scale: A/B power analysis" subtitle="Users needed per arm to detect an ASSUMED churn reduction (α = 0.05 two-sided, power = 80%).">
           <Slider label="Minimum detectable churn reduction" value={mde} min={1} max={8} step={0.5} onChange={setMde} format={(v) => `${v} pp`} />
           <div className="stats" style={{ marginTop: 12 }}>
             <div className="stat"><span>Baseline churn</span><b>{fmtPct(p1)}</b><small>current filter</small></div>
@@ -200,7 +204,7 @@ export default function OfferTab({ rows, assume, setAssume }) {
             <div className="stat"><span>Users per arm</span><b>{fmtInt(nPerArm)}</b><small>{fmtInt(nPerArm * 2)} total</small></div>
           </div>
           <Callout tone="info" title="Governance">
-            Run each play with a 10–20% randomised holdout. A {mde} pp lift on {fmtPct(p1)} churn needs ~{fmtInt(nPerArm)} users per arm, so the Whale segments ({fmtInt(cells[0].n + cells[1].n)} users here) need a production-scale base, not this sample.
+            This sizes a test for an effect you assume; it does not show any play will achieve that effect. Run each play with a 10–20% randomised holdout. A {mde} pp lift on {fmtPct(p1)} churn needs ~{fmtInt(nPerArm)} users per arm, so the Whale segments ({fmtInt(cells[0].n + cells[1].n)} users here) need a production-scale base, not this sample.
             Kill any play whose holdout gap is not significant after one cycle (<Concept name="Sunk Cost Fallacy">avoid sunk-cost escalation</Concept>).
           </Callout>
         </Card>

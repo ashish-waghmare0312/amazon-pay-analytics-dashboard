@@ -4,7 +4,7 @@ An interactive case-competition dashboard answering the five Amazon Pay India ca
 
 - **Stack:** React 18 + Vite 5 + Recharts. Everything is static and client-side. The CSV is embedded at build time (`src/data/amazon_pay_india.csv`), so there are no runtime fetches or missing assets.
 - **Every number is live.** Every chart, test and simulator recomputes from the rows that match the filter bar (City tier, Prime, Gender, Age, Income quartile, Churn status). Scenario assumptions (take rate, cashback %, persona thresholds) are shared, so changing one on any tab updates every tab.
-- **Two labelled sources:** blue tags mark *5,000-User Sample Analytics* (from the CSV). Green tags mark *Macro / Industry Context* (external, approximate, as of 2025).
+- **Three labelled sources:** blue tags mark *5,000-User Sample Analytics* (from the CSV). Green tags mark *Macro / Industry Context* (external, approximate, as of 2025). Amber tags mark *Scenario · Assumption-based* outputs.
 - **Bring your own CSV:** the **Upload CSV** button re-runs the full analysis on any file with the same 14 columns.
 
 ---
@@ -15,19 +15,19 @@ An interactive case-competition dashboard answering the five Amazon Pay India ca
 |---|---|---|---|---|
 | **Q1 Churn drivers** | `Churned`, `Tenure months`, `App engagement score`, `Customer support contacts`, `Net promoter score`, `City tier`, `Age`, `Monthly income inr` | Churn rate by segment + Wilson 95% CI; Welch t + Cohen's d (churned vs active); Pearson χ² + Cramér's V; point-biserial r; quintile bin-spread + mutual information; 2–3-way pocket scan with z-scores and a multiple-testing check | Red Pill vs Blue Pill, Habit Loop, Loss Aversion | Churn & Risk |
 | **Q2 Prime impact** | `Amazon prime member`, `Avg monthly transactions`, `Avg transaction value inr`, `App engagement score`, `Net promoter score`, `Churned` | Welch t with 95% CI of the difference + Cohen's d; two-proportion z-test; quartile box plots; Prime index (Prime ÷ Non-Prime × 100); churn stratified by tier/age/income/tenure | Carrot-and-Stick, Sunk Cost Fallacy, Endowment Effect, Status Quo Bias | Prime & UPI |
-| **Q3 High-LTV segments** | `Avg monthly transactions` × `Avg transaction value inr` × `Tenure months`, plus `City tier`, `Age`, `Monthly income inr`, `Amazon prime member` | LTV proxy; Lorenz curve, Gini, top-10/20% share; decile profiling; Pearson r of attributes with LTV; one-way ANOVA + η²; two-way segment heatmap; take-rate / cashback-cost unit economics with segment churn as attrition | Pareto Principle, Survivorship Bias | LTV & Segments |
+| **Q3 High-LTV segments** | Throughput proxy = `Avg monthly transactions` × `Avg transaction value inr` × `Tenure months`, plus `City tier`, `Age`, `Monthly income inr`, `Amazon prime member` | LTV proxy; Lorenz curve, Gini, top-10/20% share; decile profiling; Pearson r of attributes with LTV; one-way ANOVA + η²; two-way segment heatmap; take-rate / cashback-cost unit economics with segment churn as attrition | Pareto Principle, Survivorship Bias | LTV & Segments |
 | **Q4 Cashback: engagement or deal-seeking** | `Cashback used pct` vs `Avg monthly transactions`, `Avg transaction value inr`, `App engagement score`, `Churned`, `Net promoter score` | Dose–response by 10-pt band (elasticity check); ANOVA / χ² across cashback tiers; Pearson r; engagement × reliance grid; rule-based personas (utility-led, subsidised, mercenary, dormant) with tunable thresholds; cashback cost and GMV per ₹1 by persona | Mental Accounting, Diminishing Marginal Utility, Variable Ratio Reinforcement | Cashback Lab |
-| **Q5 Personalised offers** | LTV proxy (derived), `Cashback used pct`, `Net promoter score`, `Customer support contacts`, `Churned` | Value tier × cashback-reliance matrix; distress-signal overlay; per-segment scenario P&L (retained margin + cashback savings − offer cost, ROI); blanket-vs-targeted comparison; A/B power analysis | Goal-Gradient, Variable Ratio Reinforcement, Status Quo Bias, Endowment Effect, Hyperbolic Discounting | Offer Strategy Lab |
+| **Q5 Personalised offers** | Throughput proxy rank (derived), `Cashback used pct`, `Net promoter score`, `Customer support contacts`, `Churned` | Value tier × cashback-reliance matrix; distress-signal overlay; per-segment scenario P&L (retained margin + cashback savings − offer cost, ROI); blanket-vs-targeted comparison; A/B power analysis | Goal-Gradient, Variable Ratio Reinforcement, Status Quo Bias, Endowment Effect, Hyperbolic Discounting | Offer Strategy Lab |
 
 ### What the 5,000-user sample says (the "Red Pill")
 
 | | Blue pill (comfortable story) | Red pill (tested result) |
 |---|---|---|
-| Q1 | Disengaged, unhappy, high-support users churn | 0 of 21 Welch/χ² tests significant (smallest p ≈ 0.052, Gender). The only standout single group is Gender = Other (27.8% churn, but n = 97). Churn ≈ 19% elsewhere, so it is **event-driven, not profile-driven** |
-| Q2 | Prime's sunk-cost moat lifts Pay usage and loyalty | Prime: 74.8 vs 76.5 txns/mo (p = 0.16); churn 19.7% vs 18.4% (p = 0.27). The carrot-and-stick lands on shopping, **not on the wallet** |
-| Q3 | Tier-1, affluent, Prime users carry value | Top 20% of users = **58%** of LTV (Gini ≈ 0.57), but no segment ANOVA is significant (η² < 0.2%). Value is **behavioural, not demographic** |
-| Q4 | Cashback builds habits | All \|r\| < 0.02 with frequency, ticket, engagement and churn. Cashback is consumed as "free money" (**mental accounting**) and buys ~zero behaviour |
-| Q5 | Raise cashback for everyone | Personalise on **value × reliance**: status for whales, bill/UPI AutoPay habit bridges for the core, scratch cards instead of flat cashback, and caps for mercenaries. Fund it by cutting blanket cashback and prove it with A/B holdouts |
+| Q1 | Disengaged, unhappy, high-support users churn | 0 of 21 Welch/χ² tests significant (smallest p ≈ 0.052, Gender). The only standout group (Gender = Other, 27.8% churn, n = 97) does not survive FDR correction. **No recorded attribute explains churn.** *Hypothesis, not testable with this CSV:* churn follows unrecorded experience events (failed payments, refund delays, rival offers) |
+| Q2 | Prime's sunk-cost moat lifts Pay usage and loyalty | Prime: 74.8 vs 76.5 txns/mo (p = 0.16); churn 19.7% vs 18.4% (p = 0.27). **No significant difference detected**, which is not proof of zero effect; membership is self-selected, so no causal claim |
+| Q3 | Tier-1, affluent, Prime users carry value | Top 20% of users = **58%** of the *throughput proxy* (Gini ≈ 0.57); no segment ANOVA is significant (η² < 0.2%). The proxy is built from frequency, ticket and tenure, so its link to behaviour is by construction; it is cumulative ₹ throughput, **not profit or true LTV** |
+| Q4 | Cashback builds habits | All \|r\| < 0.02 between cashback utilisation and frequency, ticket, engagement and churn: **no detectable association**. Observational, so it cannot rule out a causal effect; consistent with mental-accounting discounting. Personas use hand-set thresholds and are hypotheses |
+| Q5 | Raise cashback for everyone | Test personalisation on **throughput × reliance** (status for top users, AutoPay habit bridges, scratch cards, caps for hypothesised mercenaries). All ROI and retention figures are **scenario outputs under stated assumptions**, to be validated by A/B holdouts |
 
 **Data-integrity note:** implied monthly GMV (txns × ticket) exceeds stated monthly income for ~77% of users, and the features are nearly independent, which suggests a synthetic dataset. Conclusions therefore rest on ranks, ratios, effect sizes and p-values, and ₹ LTV is presented as a throughput index.
 
@@ -114,9 +114,24 @@ No environment variables are needed. The dataset ships inside the JS bundle.
 
 ---
 
-## 6. Method guardrails
+## 6. Method guardrails and limitations
 
-- p-values are computed in the browser: Welch t (Satterthwaite df), Pearson χ² (no Yates correction), one-way ANOVA F, and two-proportion z. They match SciPy to three decimals.
+**Statistics**
+- p-values are computed in the browser: Welch t (Satterthwaite df), Pearson χ² (no Yates correction), one-way ANOVA F and two-proportion z. They match SciPy to three decimals.
+- Welch confidence intervals use the **t critical value at the Satterthwaite df**, not 1.96. Correlation significance uses the **exact t-test threshold on r** (df = n − 2), which matters for small filtered samples.
+- Exploratory subgroup scans (single-group splits and the 2–3-way pocket scan) report **Benjamini–Hochberg FDR q-values**. On the full sample, none of the 3,768 pockets survives correction.
 - Each p-value is shown with an effect size (Cohen's d, Cramér's V or η²). With n = 5,000, statistical significance alone is not commercial significance.
-- Simulator inputs (take rate, cashback %, offer cost, churn reduction) are **assumptions** and are labelled as such. They are not CSV facts.
+
+**Data validation**
+- On load (embedded or uploaded CSV), rows are rejected for: non-numeric values, out-of-range values (e.g. age 18–100, engagement 1–10, cashback 0–100, NPS −100 to 100, Prime/churn exactly 0 or 1), unrecognised tier or gender labels, and duplicate customer IDs. The header and Summary show the count by reason.
+
+**Interpretation**
+- All comparisons are **observational associations**. A non-significant result is not proof of no effect, and a significant one is not proof of causation.
+- The **throughput proxy** (txns × ticket × tenure) measures cumulative transaction value, not profit or true lifetime value.
+- The CSV's churn flag has **no stated observation window**. Scenario maths converts it to annual attrition under an assumed window (slider, default 12 months).
+- `Cashback used pct` is **utilisation**, not rupees spent; rupee cashback costs are modelled (GMV × offered % × utilisation).
+- Cashback personas use hand-set thresholds and are hypotheses, not validated segments.
+
+**Scenarios**
+- Amber **Scenario · Assumption-based** tags mark simulated outputs: take rate, cashback %, offer cost, churn reduction and savings are assumptions, not measured outcomes. The A/B power calculator sizes a test for an assumed effect; it does not show that effect will occur.
 - Macro / Industry Context figures are approximate, dated 2025, and kept separate from the CSV metrics. Refresh them before presenting.

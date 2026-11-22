@@ -69,6 +69,38 @@ export const tTwoSidedP = (t, df) => (Number.isFinite(t) && df > 0 ? ibeta(df / 
 export const fP = (F, d1, d2) => (F > 0 && d1 > 0 && d2 > 0 ? ibeta(d2 / (d2 + d1 * F), d2 / 2, d1 / 2) : NaN);
 export const chi2P = (x, k) => (k > 0 && x >= 0 ? 1 - gammp(k / 2, x / 2) : NaN);
 
+/** Two-sided critical t value for the given df (e.g. 0.05 → t such that P(|T| > t) = 0.05), by bisection. */
+export function tCrit(df, alpha = 0.05) {
+  if (!(df > 0)) return NaN;
+  let lo = 0, hi = 1000;
+  for (let i = 0; i < 200; i++) {
+    const mid = (lo + hi) / 2;
+    if (tTwoSidedP(mid, df) > alpha) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+/** Exact critical |r| for a two-sided Pearson test at level alpha with n observations (t-test on r, df = n − 2). */
+export function pearsonRCrit(n, alpha = 0.05) {
+  if (n < 4) return NaN;
+  const t = tCrit(n - 2, alpha);
+  return t / Math.sqrt(n - 2 + t * t);
+}
+
+/** Benjamini–Hochberg adjusted p-values (q-values), returned in the input order. */
+export function bhAdjust(ps) {
+  const m = ps.length;
+  const order = ps.map((p, i) => [p, i]).sort((a, b) => a[0] - b[0]);
+  const q = new Array(m);
+  let prev = 1;
+  for (let k = m - 1; k >= 0; k--) {
+    const [p, i] = order[k];
+    prev = Math.min(prev, (p * m) / (k + 1));
+    q[i] = Math.min(1, prev);
+  }
+  return q;
+}
+
 // ---------- descriptive ----------
 const vals = (rows, k) => rows.map((r) => (typeof k === 'function' ? k(r) : r[k]));
 export function moments(arr) {
@@ -102,12 +134,13 @@ export function welch(a, b, k) {
   const diff = B.mean - A.mean;
   const t = se ? diff / se : 0;
   const df = (va + vb) ** 2 / ((va * va) / (A.n - 1) + (vb * vb) / (B.n - 1));
+  const tc = tCrit(df); // Welch–Satterthwaite critical value, not the normal 1.96
   const pooled = Math.sqrt(((A.n - 1) * A.var + (B.n - 1) * B.var) / (A.n + B.n - 2));
   return {
     ma: A.mean, mb: B.mean, na: A.n, nb: B.n, diff, t, df,
     p: tTwoSidedP(t, df),
     d: pooled ? diff / pooled : 0,
-    ci: [diff - 1.96 * se, diff + 1.96 * se],
+    ci: [diff - tc * se, diff + tc * se],
   };
 }
 const nullTest = { diff: NaN, t: NaN, df: NaN, p: NaN, d: NaN, ci: [NaN, NaN] };

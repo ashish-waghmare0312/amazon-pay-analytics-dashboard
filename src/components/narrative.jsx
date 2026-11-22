@@ -12,9 +12,19 @@ export function Concept({ name, children }) {
 
 /** Source badge: separates CSV-derived numbers from external macro context. */
 export function SourceTag({ kind = 'sample' }) {
-  return kind === 'macro'
-    ? <span className="src-tag macro">Macro / Industry Context</span>
-    : <span className="src-tag sample">5,000-User Sample Analytics</span>;
+  if (kind === 'macro') return <span className="src-tag macro">Macro / Industry Context</span>;
+  if (kind === 'scenario') return <span className="src-tag scenario">Scenario · Assumption-based</span>;
+  return <span className="src-tag sample">5,000-User Sample Analytics</span>;
+}
+
+/** Banner for simulated figures: outputs follow from stated assumptions, not from the CSV. */
+export function ScenarioNote({ children }) {
+  return (
+    <div className="scenario-note" role="note">
+      <SourceTag kind="scenario" />
+      <span>{children}</span>
+    </div>
+  );
 }
 
 export function SectionTitle({ title, kind = 'sample', children }) {

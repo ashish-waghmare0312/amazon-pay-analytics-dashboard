@@ -3,7 +3,7 @@ import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, LabelList, Cell,
 } from 'recharts';
 import { Card, Callout, Segmented, Tip, axisProps, axisLabel, Legend, Slider, C } from '../components/ui.jsx';
-import { PillContrast, SectionTitle, Concept, Sig } from '../components/narrative.jsx';
+import { PillContrast, SectionTitle, Concept, Sig, ScenarioNote } from '../components/narrative.jsx';
 import { anova, chiSquare, propTest, welch, fmtP } from '../lib/stats.js';
 import {
   churnRate, mean, sum, pearson, groupBy, fmtPct, fmtInt, fmtNum, fmtINR, fmtINRShort, CB_TIERS, ENG_BUCKETS,
@@ -99,7 +99,7 @@ export default function CashbackTab({ rows, assume, setAssume }) {
       </SectionTitle>
       <PillContrast
         blue={<>“Cashback works: it builds a <Concept name="Habit Loop">habit loop</Concept>, the reward trains repeat use, and heavy redeemers are our most engaged users.”</>}
-        red={<>Across ten cashback-utilisation bands, average monthly transactions vary by only <b>{fmtNum(txnSpread, 1)}</b> (max − min), and {sigOutcomes.length === 0 ? 'none' : sigOutcomes.length} of {tierTests.length} outcomes differ significantly across cashback tiers (all |r| ≤ {Math.max(...tierTests.map((t) => Math.abs(t.r))).toFixed(3)}). Cashback is being consumed as <Concept name="Mental Accounting">“free money”</Concept>, not converted into frequency, ticket size or loyalty. That is <Concept name="Diminishing Marginal Utility" /> at its limit: the marginal rupee buys ~zero behaviour.</>}
+        red={<>Across ten cashback-utilisation bands, average monthly transactions vary by only <b>{fmtNum(txnSpread, 1)}</b> (max − min), and {sigOutcomes.length === 0 ? 'none' : sigOutcomes.length} of {tierTests.length} outcomes differ significantly across cashback tiers (all |r| ≤ {Math.max(...tierTests.map((t) => Math.abs(t.r))).toFixed(3)}). This is an <b>association</b> in observational data: it does not prove cashback has no causal effect (heavy users may differ in ways the CSV doesn't record). It is consistent with cashback being consumed as <Concept name="Mental Accounting">“free money”</Concept> under <Concept name="Diminishing Marginal Utility" />; only a randomised test can show what the marginal rupee buys.</>}
       />
 
       <div className="grid g2">
@@ -117,8 +117,8 @@ export default function CashbackTab({ rows, assume, setAssume }) {
               <Line dataKey="txns" stroke={C.s1} strokeWidth={2} dot={{ r: 4 }} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
-          <Callout tone="warn" title="Flat line = no elasticity">
-            The line stays within ±{fmtNum(txnSpread / 2, 1)} transactions of the mean across the whole range. If cashback bought frequency, the right side would sit visibly higher. Elasticity of frequency to cashback ≈ 0 in this sample.
+          <Callout tone="warn" title="Flat line = no detectable association">
+            The line stays within ±{fmtNum(txnSpread / 2, 1)} transactions of the mean across the whole range. A strong positive association would make the right side sit visibly higher. No detectable association in this sample; this is not a causal elasticity estimate.
           </Callout>
         </Card>
 
@@ -175,7 +175,7 @@ export default function CashbackTab({ rows, assume, setAssume }) {
       </Card>
 
       <div className="sim-grid" style={{ marginBottom: 14 }}>
-        <Card title="Persona thresholds" subtitle="Transparent rules; tune and watch the table.">
+        <Card title="Persona thresholds (hypotheses)" subtitle="Hand-set rules, not validated segments. Tune and watch the table.">
           <div className="controls">
             <Slider label="Heavy cashback user if used ≥" value={cbCut} min={30} max={90} step={5} onChange={setCbCut} format={(v) => `${v}%`} />
             <Slider label="High engagement if score ≥" value={engHi} min={6} max={10} onChange={(v) => setEngHi(Math.max(v, engLo + 2))} format={(v) => v} />
@@ -187,7 +187,8 @@ export default function CashbackTab({ rows, assume, setAssume }) {
           </ul>
         </Card>
 
-        <Card title="Utility-led vs mercenary: persona scorecard" subtitle="Who receives the cashback budget, and what it buys.">
+        <Card title="Utility-led vs mercenary: hypothesised personas" subtitle="Who receives the modelled cashback budget. Personas use hand-picked thresholds and are hypotheses, not validated segments.">
+          <ScenarioNote>Cashback ₹ cost is modelled as GMV × offered % × utilisation %. <code>Cashback used pct</code> in the CSV is the share of earned cashback utilised, not rupees spent.</ScenarioNote>
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={personas.filter((p) => p.n)} layout="vertical" margin={{ top: 0, right: 60, left: 10, bottom: 14 }}>
               <CartesianGrid horizontal={false} />
@@ -205,7 +206,7 @@ export default function CashbackTab({ rows, assume, setAssume }) {
           </ResponsiveContainer>
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Persona</th><th>Users</th><th>Share</th><th>Txns/mo</th><th>Ticket</th><th>Avg LTV</th><th>Churn</th><th>NPS</th><th>CB cost/user/yr</th><th>GMV per ₹1 CB</th></tr></thead>
+              <thead><tr><th>Persona</th><th>Users</th><th>Share</th><th>Txns/mo</th><th>Ticket</th><th>Avg throughput</th><th>Churn</th><th>NPS</th><th>CB cost/user/yr</th><th>GMV per ₹1 CB</th></tr></thead>
               <tbody>
                 {personas.map((p) => (
                   <tr key={p.id}>
@@ -217,10 +218,10 @@ export default function CashbackTab({ rows, assume, setAssume }) {
               </tbody>
             </table>
           </div>
-          <Callout tone="warn" title="Verdict: deal-seeking, not engagement">
+          <Callout tone="warn" title="Reading: consistent with deal-seeking, not proof of it">
             Mercenary deal-seekers and utility-led loyalists {mu.churn.p >= 0.05 && mu.txns.p >= 0.05 ? 'behave alike' : 'differ on some measures'}: churn {fmtPct(P.mercenary.churn)} vs {fmtPct(P.utility.churn)} (<Sig p={mu.churn.p} />), {fmtNum(P.mercenary.txns, 1)} vs {fmtNum(P.utility.txns, 1)} txns/month (<Sig p={mu.txns.p} />).
-            So the cashback mercenaries absorb (<b>{fmtPct(P.mercenary.cost / totalCost, 0)}</b> of budget, {fmtINRShort(mercCost)}/yr in this sample) buys <b>no extra frequency or retention</b>, and heavy-cashback personas take {fmtPct(subsidyShare, 0)} of total spend for the same behaviour as light users.
-            Cashback here is a <b>price discount, not a habit former</b>: pull it from mercenaries and redeploy it as capped, conditional, <Concept name="Goal-Gradient Effect">goal-gradient</Concept> rewards (see Offer Lab).
+            Under the cost model, mercenaries absorb <b>{fmtPct(P.mercenary.cost / totalCost, 0)}</b> of modelled budget ({fmtINRShort(mercCost)}/yr) with <b>no detectable extra frequency or retention</b>, and heavy-cashback personas take {fmtPct(subsidyShare, 0)} of modelled spend while behaving like light users.
+            That pattern is <b>consistent with</b> cashback acting as a price discount rather than a habit former. It is a hypothesis worth testing: cap mercenary cashback and trial capped, conditional, <Concept name="Goal-Gradient Effect">goal-gradient</Concept> rewards against a holdout (see Offer Lab).
           </Callout>
         </Card>
       </div>

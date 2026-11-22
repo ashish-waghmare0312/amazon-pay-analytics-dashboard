@@ -5,6 +5,8 @@ import {
 import { Card, Callout, Segmented, Tip, axisProps, axisLabel, Legend, Slider, C } from '../components/ui.jsx';
 import { PillContrast, SectionTitle, Concept, Sig } from '../components/narrative.jsx';
 import { anova, fmtP } from '../lib/stats.js';
+import { annualAttrition } from '../lib/analyses.js';
+import { ScenarioNote } from '../components/narrative.jsx';
 import {
   churnRate, mean, sum, pearson, groupBy, fmtPct, fmtInt, fmtNum, fmtINR, fmtINRShort,
   TIERS, AGE_BRACKETS, INCOME_Q, GENDERS,
@@ -23,7 +25,7 @@ const seqInk = (i) => (i >= 2 ? '#fff' : 'var(--text-primary)');
 
 /** Annual net margin per customer under the scenario assumptions. */
 export const annualMargin = (r, take, cbRate) => r.gmv * 12 * (take - cbRate * (r.cashback / 100));
-/** Forward value over H years using the segment churn rate as annual attrition. */
+/** Forward value over H years; `churn` must already be an ANNUAL attrition rate (see annualAttrition). */
 export const forwardValue = (marginPerYear, churn, years) => {
   let v = 0;
   for (let t = 0; t < years; t++) v += marginPerYear * (1 - churn) ** t;
@@ -31,9 +33,9 @@ export const forwardValue = (marginPerYear, churn, years) => {
 };
 
 export default function LtvTab({ rows, assume, setAssume }) {
-  const { take, cbRate } = assume;
+  const { take, cbRate, windowMonths } = assume;
   const upd = (k) => (v) => setAssume((a) => ({ ...a, [k]: v }));
-  const setTake = upd('take'), setCbRate = upd('cbRate');
+  const setTake = upd('take'), setCbRate = upd('cbRate'), setWindow = upd('windowMonths');
   const [years, setYears] = useState(3);
   const [rowDim, setRowDim] = useState('tier');
   const [colDim, setColDim] = useState('ageB');
@@ -82,10 +84,10 @@ export default function LtvTab({ rows, assume, setAssume }) {
   // ---------- heatmap ----------
   const rd = DIMS.find((d) => d.k === rowDim), cd = DIMS.find((d) => d.k === colDim);
   const METRICS = {
-    ltv: { label: 'Avg LTV proxy (₹ throughput)', fmt: fmtINRShort, f: (g) => mean(g, 'ltv') },
-    fwd: { label: `Fwd ${years}-yr net value / user`, fmt: fmtINRShort, f: (g) => forwardValue(mean(g.map((r) => annualMargin(r, T, CB))), churnRate(g), years) },
+    ltv: { label: 'Avg throughput proxy (₹ throughput)', fmt: fmtINRShort, f: (g) => mean(g, 'ltv') },
+    fwd: { label: `Fwd ${years}-yr net value / user`, fmt: fmtINRShort, f: (g) => forwardValue(mean(g.map((r) => annualMargin(r, T, CB))), annualAttrition(churnRate(g), windowMonths), years) },
     churn: { label: 'Churn rate', fmt: (v) => fmtPct(v), f: (g) => churnRate(g) },
-    pool: { label: 'Total LTV pool (share)', fmt: (v) => fmtPct(v), f: (g) => sum(g, 'ltv') / pareto.total },
+    pool: { label: 'Total throughput pool (share)', fmt: (v) => fmtPct(v), f: (g) => sum(g, 'ltv') / pareto.total },
   };
   const M = METRICS[metric];
   const heat = useMemo(() => {
@@ -97,7 +99,7 @@ export default function LtvTab({ rows, assume, setAssume }) {
     const vs = cells.map((c) => c.v).filter(Number.isFinite);
     const lo = Math.min(...vs), hi = Math.max(...vs);
     return { cells, lo, hi };
-  }, [rows, rd, cd, metric, T, CB, years]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rows, rd, cd, metric, T, CB, years, windowMonths]); // eslint-disable-line react-hooks/exhaustive-deps
   const bucket = (v) => (!Number.isFinite(v) ? -1 : heat.hi === heat.lo ? 2 : Math.min(4, Math.floor(((v - heat.lo) / (heat.hi - heat.lo)) * 5)));
   const best = heat.cells.filter((c) => Number.isFinite(c.v)).sort((a, b) => (metric === 'churn' ? a.v - b.v : b.v - a.v))[0];
   const worst = heat.cells.filter((c) => Number.isFinite(c.v)).sort((a, b) => (metric === 'churn' ? b.v - a.v : a.v - b.v))[0];
@@ -121,26 +123,26 @@ export default function LtvTab({ rows, assume, setAssume }) {
   return (
     <>
       <SectionTitle title="Q3 · Which customer segments deliver the highest lifetime value?">
-        LTV proxy = <code>Avg monthly transactions</code> × <code>Avg transaction value inr</code> × <code>Tenure months</code> (cumulative ₹ throughput). Forward value applies a take-rate and cashback-cost scenario with segment churn as attrition. Methods: Pareto/Lorenz & Gini, decile profiling, one-way ANOVA (η²), segment heatmaps.
+        <b>Throughput proxy</b> (our stand-in for LTV) = <code>Avg monthly transactions</code> × <code>Avg transaction value inr</code> × <code>Tenure months</code>: cumulative ₹ transaction value, <b>not profit and not true lifetime value</b>. Forward value is a scenario: assumed take rate and cashback cost, with segment churn converted to annual attrition under an assumed observation window. Methods: Pareto/Lorenz & Gini, decile profiling, one-way ANOVA (η²), segment heatmaps.
       </SectionTitle>
       <PillContrast
         blue={<>“High-LTV customers are Tier-1, affluent, Prime, 26–35 year olds. Target the right demographic and value follows.”</>}
-        red={<>Value is <b>highly concentrated</b> (top 20% = {fmtPct(pareto.top20, 0)} of the pool, Gini {fmtNum(pareto.gini, 2)}) but <b>not demographically predictable</b>: {sigAnova.length === 0 ? 'no' : sigAnova.length} of {anovas.length} segment ANOVAs are significant and η² stays below {fmtPct(Math.max(...anovas.map((a) => a.eta2 || 0)), 1)}. Top-decile users have the same income, age, tier mix and Prime rate as the bottom decile. They differ only in <b>behaviour</b> (frequency × ticket × tenure). <Concept name="Pareto Principle">Pareto</Concept> holds; demographics don't.</>}
+        red={<>Transaction throughput is <b>highly concentrated</b> (top 20% = {fmtPct(pareto.top20, 0)} of the pool, Gini {fmtNum(pareto.gini, 2)}) and shows <b>no significant demographic association</b>: {sigAnova.length === 0 ? 'no' : sigAnova.length} of {anovas.length} segment ANOVAs are significant and η² stays below {fmtPct(Math.max(...anovas.map((a) => a.eta2 || 0)), 1)}. Top-decile users look similar to the bottom decile on income, age, tier mix and Prime rate. They differ in frequency, ticket and tenure, but that is <b>partly by construction</b>, since the proxy is built from exactly those columns; it does not show that real customer value is purely behavioural.</>}
       />
 
       <div className="grid g4">
         {[
-          { l: 'Top 10% share of LTV pool', v: fmtPct(pareto.top10), s: 'Whales: protect at all costs' },
-          { l: 'Top 20% share of LTV pool', v: fmtPct(pareto.top20), s: `Pareto 20/${Math.round(pareto.top20 * 100)}${pareto.top20 < 0.75 ? ', not 20/80' : ''}` },
-          { l: 'Gini coefficient (LTV)', v: fmtNum(pareto.gini, 3), s: '0 = equal · 1 = one customer holds all' },
-          { l: 'Top-decile vs bottom-decile LTV', v: `${fmtNum(d1.ltv / d10.ltv, 0)}×`, s: `${fmtINRShort(d1.ltv)} vs ${fmtINRShort(d10.ltv)}` },
+          { l: 'Top 10% share of throughput pool', v: fmtPct(pareto.top10), s: 'cumulative ₹ throughput, not profit' },
+          { l: 'Top 20% share of throughput pool', v: fmtPct(pareto.top20), s: `Pareto 20/${Math.round(pareto.top20 * 100)}${pareto.top20 < 0.75 ? ', not 20/80' : ''}` },
+          { l: 'Gini coefficient (throughput)', v: fmtNum(pareto.gini, 3), s: '0 = equal · 1 = one customer holds all' },
+          { l: 'Top vs bottom decile throughput', v: `${fmtNum(d1.ltv / d10.ltv, 0)}×`, s: `${fmtINRShort(d1.ltv)} vs ${fmtINRShort(d10.ltv)}` },
         ].map((k) => (
           <div className="kpi" key={k.l}><span className="kpi-label">{k.l}</span><b className="kpi-value">{k.v}</b><small className="kpi-delta">{k.s}</small></div>
         ))}
       </div>
 
       <div className="grid g2">
-        <Card title="Lorenz curve: cumulative share of LTV" subtitle="Customers ranked by LTV proxy (highest first). Dashed diagonal = perfect equality.">
+        <Card title="Lorenz curve: cumulative share of LTV" subtitle="Customers ranked by throughput proxy (highest first). Dashed diagonal = perfect equality.">
           <ResponsiveContainer width="100%" height={270}>
             <AreaChart data={pareto.curve} margin={{ top: 8, right: 14, left: 4, bottom: 18 }}>
               <CartesianGrid vertical={false} />
@@ -148,17 +150,17 @@ export default function LtvTab({ rows, assume, setAssume }) {
               <YAxis {...axisProps} domain={[0, 1]} tickFormatter={(v) => `${Math.round(v * 100)}%`} width={44} label={axisLabel('Cumulative LTV share', 'y')} />
               <ReferenceLine segment={[{ x: 0, y: 0 }, { x: 1, y: 1 }]} stroke="var(--text-muted)" strokeDasharray="4 4" />
               <ReferenceLine x={0.2} stroke="var(--text-secondary)" strokeDasharray="2 3" label={{ value: `top 20% → ${fmtPct(pareto.top20, 0)}`, position: 'insideBottomRight', fill: 'var(--text-secondary)', fontSize: 10.5 }} />
-              <Tooltip content={<Tip title={(p) => `Top ${fmtPct(p[0].payload.x, 0)} of customers`} build={(p) => [{ label: 'Share of LTV pool', value: fmtPct(p[0].payload.y), color: C.s1 }]} />} />
+              <Tooltip content={<Tip title={(p) => `Top ${fmtPct(p[0].payload.x, 0)} of customers`} build={(p) => [{ label: 'Share of throughput pool', value: fmtPct(p[0].payload.y), color: C.s1 }]} />} />
               <Area type="monotone" dataKey="y" stroke={C.s1} strokeWidth={2} fill={C.s1} fillOpacity={0.16} isAnimationActive={false} />
             </AreaChart>
           </ResponsiveContainer>
         </Card>
 
-        <Card title="What builds LTV? Correlation with the LTV proxy" subtitle="Pearson r. Blue = the three LTV components (correlated by construction); grey = every other attribute.">
+        <Card title="Correlation with the throughput proxy" subtitle="Pearson r. Blue = the three columns the proxy is built from (correlated by construction, not a finding); grey = every other attribute.">
           <ResponsiveContainer width="100%" height={270}>
             <BarChart data={drivers} layout="vertical" margin={{ top: 4, right: 40, left: 10, bottom: 18 }}>
               <CartesianGrid horizontal={false} />
-              <XAxis type="number" {...axisProps} domain={[-0.1, 0.6]} tickFormatter={(v) => v.toFixed(1)} label={axisLabel('Pearson r with LTV proxy')} />
+              <XAxis type="number" {...axisProps} domain={[-0.1, 0.6]} tickFormatter={(v) => v.toFixed(1)} label={axisLabel('Pearson r with throughput proxy')} />
               <YAxis type="category" dataKey="label" {...axisProps} width={150} />
               <ReferenceLine x={0} stroke="var(--text-secondary)" />
               <Tooltip cursor={{ fill: 'var(--surface-2)' }} content={<Tip build={(p) => [{ label: 'r', value: p[0].payload.r.toFixed(3), color: C.s1 }, { label: 'Variance explained', value: fmtPct(p[0].payload.r ** 2, 1) }]} />} />
@@ -172,14 +174,14 @@ export default function LtvTab({ rows, assume, setAssume }) {
         </Card>
       </div>
 
-      <Card title="Decile profile: what separates whales from the long tail?" subtitle="D1 = top 10% by LTV proxy. If demographic columns stay flat while behaviour columns fall, value is earned, not inherited.">
+      <Card title="Decile profile: what separates whales from the long tail?" subtitle="D1 = top 10% by throughput proxy. Behaviour columns fall by construction; the informative comparison is the demographic columns.">
         <div className="grid g2" style={{ marginBottom: 6 }}>
           <ResponsiveContainer width="100%" height={210}>
             <BarChart data={pareto.deciles} margin={{ top: 18, right: 8, left: 4, bottom: 18 }}>
               <CartesianGrid vertical={false} />
               <XAxis dataKey="name" {...axisProps} label={axisLabel('LTV decile (D1 = highest)')} />
-              <YAxis {...axisProps} tickFormatter={(v) => `${Math.round(v * 100)}%`} width={44} label={axisLabel('Share of LTV pool', 'y')} />
-              <Tooltip cursor={{ fill: 'var(--surface-2)' }} content={<Tip build={(p) => [{ label: 'Share of pool', value: fmtPct(p[0].payload.share), color: C.s1 }, { label: 'Avg LTV proxy', value: fmtINRShort(p[0].payload.ltv) }, { label: 'Customers', value: fmtInt(p[0].payload.n) }]} />} />
+              <YAxis {...axisProps} tickFormatter={(v) => `${Math.round(v * 100)}%`} width={44} label={axisLabel('Share of throughput pool', 'y')} />
+              <Tooltip cursor={{ fill: 'var(--surface-2)' }} content={<Tip build={(p) => [{ label: 'Share of pool', value: fmtPct(p[0].payload.share), color: C.s1 }, { label: 'Avg throughput proxy', value: fmtINRShort(p[0].payload.ltv) }, { label: 'Customers', value: fmtInt(p[0].payload.n) }]} />} />
               <Bar dataKey="share" fill={C.s1} radius={[4, 4, 0, 0]} maxBarSize={40} isAnimationActive={false}>
                 <LabelList dataKey="share" position="top" formatter={(v) => fmtPct(v, 0)} fill="var(--text-secondary)" fontSize={10.5} />
               </Bar>
@@ -200,7 +202,7 @@ export default function LtvTab({ rows, assume, setAssume }) {
         <Legend items={[{ label: 'Prime share', color: C.s1 }, { label: 'Tier-1 share', color: C.s2 }, { label: 'Churn rate', color: C.s3 }]} />
         <div className="table-wrap" style={{ marginTop: 10 }}>
           <table>
-            <thead><tr><th>Decile</th><th>Avg LTV</th><th>Txns/mo</th><th>Avg ticket</th><th>Tenure</th><th>Engagement</th><th>Cashback %</th><th>Income</th><th>Age</th><th>Prime</th><th>Churn</th></tr></thead>
+            <thead><tr><th>Decile</th><th>Avg throughput</th><th>Txns/mo</th><th>Avg ticket</th><th>Tenure</th><th>Engagement</th><th>Cashback %</th><th>Income</th><th>Age</th><th>Prime</th><th>Churn</th></tr></thead>
             <tbody>
               {pareto.deciles.map((d) => (
                 <tr key={d.name}>
@@ -211,10 +213,10 @@ export default function LtvTab({ rows, assume, setAssume }) {
             </tbody>
           </table>
         </div>
-        <Callout tone="info" title="Behaviour, not birth certificate">
+        <Callout tone="info" title="What the deciles do and do not show">
           D1 transacts {fmtNum(d1.txns / d10.txns, 1)}× as often as D10, at {fmtNum(d1.atv / d10.atv, 1)}× the ticket and {fmtNum(d1.tenure / d10.tenure, 1)}× the tenure,
           while their income (≈{fmtINRShort(d1.income)} vs {fmtINRShort(d10.income)}), Prime share ({fmtPct(d1.prime, 0)} vs {fmtPct(d10.prime, 0)}) and churn ({fmtPct(d1.churn)} vs {fmtPct(d10.churn)}) {demoSimilar ? 'are near-identical' : 'differ, but far less than behaviour does'}.
-          {Math.abs(d1.churn - d10.churn) < 0.05 ? 'Whales churn at about the same rate as minnows, so' : 'Whatever the churn gap,'} <b>each lost whale costs ~{fmtNum(d1.ltv / mean(rows, 'ltv'), 1)}× an average customer</b>. Retention spend should be <b>value-weighted</b>, not demographic.
+          {Math.abs(d1.churn - d10.churn) < 0.05 ? 'Whales churn at about the same rate as minnows, so' : 'Whatever the churn gap,'} each lost top-decile customer removes ~{fmtNum(d1.ltv / mean(rows, 'ltv'), 1)}× the average <b>throughput</b> (not profit). The higher behaviour figures are mechanical; the useful finding is that demographics do not single these users out, which argues for <b>throughput-weighted</b> rather than demographic targeting.
         </Callout>
       </Card>
 
@@ -229,7 +231,7 @@ export default function LtvTab({ rows, assume, setAssume }) {
             </>
           )}
         >
-          <Segmented value={metric} onChange={setMetric} options={[{ value: 'ltv', label: 'Avg LTV' }, { value: 'fwd', label: 'Fwd value' }, { value: 'churn', label: 'Churn' }, { value: 'pool', label: 'Pool share' }]} />
+          <Segmented value={metric} onChange={setMetric} options={[{ value: 'ltv', label: 'Avg throughput' }, { value: 'fwd', label: 'Fwd value' }, { value: 'churn', label: 'Churn' }, { value: 'pool', label: 'Pool share' }]} />
           <div className="heat" style={{ gridTemplateColumns: `110px repeat(${cd.order.length}, minmax(0,1fr))`, marginTop: 10 }}>
             <div />
             {cd.order.map((c) => <div className="hh" key={c}>{c}</div>)}
@@ -262,7 +264,7 @@ export default function LtvTab({ rows, assume, setAssume }) {
           )}
         </Card>
 
-        <Card title="One-way ANOVA: does LTV differ by segment?" subtitle="F-test of mean LTV proxy across segment levels. η² = share of LTV variance the segment explains.">
+        <Card title="One-way ANOVA: does LTV differ by segment?" subtitle="F-test of mean throughput proxy across segment levels. η² = share of LTV variance the segment explains.">
           <div className="table-wrap">
             <table>
               <thead><tr><th>Segment</th><th>Highest mean</th><th>Lowest mean</th><th>F</th><th>η²</th><th>p</th></tr></thead>
@@ -285,19 +287,21 @@ export default function LtvTab({ rows, assume, setAssume }) {
           </div>
           <Callout tone={sigAnova.length ? 'info' : 'warn'} title="Verdict">
             {sigAnova.length
-              ? <>Significant: {sigAnova.map((a) => a.label).join(', ')}, but each explains under {fmtPct(Math.max(...sigAnova.map((a) => a.eta2)), 1)} of LTV variance. Statistically real, commercially small.</>
-              : <>No segment dimension explains LTV (all p ≥ .05, smallest p = {fmtP(Math.min(...anovas.map((a) => a.p)))}). {(() => { const g = anovas.flatMap((a) => a.groups.map((x) => ({ ...x, dim: a.label }))).sort((x, y) => y.mean - x.mean)[0]; return g ? `${g.key} (${g.dim}) has the highest raw mean, but the gap is within noise.` : ''; })()} The highest-value “segment” is a <b>behavioural cohort</b>: the top-2 LTV deciles.</>}
+              ? <>Significant: {sigAnova.map((a) => a.label).join(', ')}, but each explains under {fmtPct(Math.max(...sigAnova.map((a) => a.eta2)), 1)} of throughput variance. Statistically real, commercially small.</>
+              : <>No segment dimension is significantly associated with the throughput proxy (all p ≥ .05, smallest p = {fmtP(Math.min(...anovas.map((a) => a.p)))}). {(() => { const g = anovas.flatMap((a) => a.groups.map((x) => ({ ...x, dim: a.label }))).sort((x, y) => y.mean - x.mean)[0]; return g ? `${g.key} (${g.dim}) has the highest raw mean, but the gap is within noise.` : ''; })()} The highest-throughput group is defined by the proxy's own components (the top-2 deciles), not by a demographic segment.</>}
           </Callout>
 
-          <h4 style={{ margin: '16px 0 8px', fontSize: 13.5 }}>Unit-economics scenario <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}>(assumptions, not CSV facts)</span></h4>
+          <h4 style={{ margin: '16px 0 8px', fontSize: 13.5 }}>Unit-economics scenario</h4>
+          <ScenarioNote>Every figure below follows from the sliders, not from the CSV. Cashback cost is modelled (GMV × offered % × utilisation %); the CSV records utilisation, not rupees paid.</ScenarioNote>
           <div className="controls">
             <Slider label="Net take rate on GMV" value={take} min={0.1} max={2} step={0.05} onChange={setTake} format={(v) => `${v.toFixed(2)}%`} hint="Blended MDR/interchange/bill-pay/ads revenue per ₹ of GMV. UPI P2M is zero-MDR." />
             <Slider label="Cashback offered (% of GMV)" value={cbRate} min={0} max={2} step={0.05} onChange={setCbRate} format={(v) => `${v.toFixed(2)}%`} hint="Cost = GMV × offered % × Cashback used pct." />
             <Slider label="Forward horizon" value={years} min={1} max={5} onChange={setYears} format={(v) => `${v} yr`} />
+            <Slider label="Assumed churn-flag window" value={windowMonths} min={3} max={36} step={3} onChange={setWindow} format={(v) => `${v} months`} hint={`The CSV gives no observation window. At ${windowMonths} months, ${fmtPct(churnRate(rows))} churn ≈ ${fmtPct(annualAttrition(churnRate(rows), windowMonths))} a year.`} />
           </div>
           <div className="stats" style={{ marginTop: 12 }}>
             <div className="stat"><span>Annual net revenue</span><b>{fmtINRShort(econ.revenue)}</b><small>on {fmtINRShort(econ.gmvYr)} GMV</small></div>
-            <div className="stat"><span>Annual cashback cost</span><b>{fmtINRShort(econ.cbCost)}</b><small>{fmtPct(econ.cbCost / econ.revenue, 0)} of revenue</small></div>
+            <div className="stat"><span>Modelled cashback cost / yr</span><b>{fmtINRShort(econ.cbCost)}</b><small>{fmtPct(econ.cbCost / econ.revenue, 0)} of revenue</small></div>
             <div className="stat"><span>Annual net margin</span><b>{fmtINRShort(econ.net)}</b><small>{fmtINR(econ.perUser)} per user</small></div>
             <div className="stat"><span>Margin-negative users</span><b>{fmtPct(econ.negative / rows.length, 0)}</b><small>{fmtInt(econ.negative)} cost more than they earn</small></div>
           </div>

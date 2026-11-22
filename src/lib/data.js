@@ -21,6 +21,23 @@ const SCHEMA = {
   churned: ['churned', 'churn'],
 };
 const NUMERIC = ['id', 'age', 'income', 'tenure', 'prime', 'txns', 'atv', 'cashback', 'engagement', 'support', 'nps', 'churned'];
+
+/** Accepted range per numeric column (inclusive) and whether it must be a whole number. */
+export const RANGES = {
+  age: { min: 18, max: 100, int: true },
+  income: { min: 0, max: Infinity },
+  tenure: { min: 0, max: 600, int: true },
+  prime: { min: 0, max: 1, int: true },
+  txns: { min: 0, max: Infinity },
+  atv: { min: 0, max: Infinity },
+  cashback: { min: 0, max: 100 },
+  engagement: { min: 1, max: 10 },
+  support: { min: 0, max: Infinity, int: true },
+  nps: { min: -100, max: 100 },
+  churned: { min: 0, max: 1, int: true },
+};
+const TIER_MAP = { tier1: 'Tier 1', tier2: 'Tier 2', tier3: 'Tier 3', '1': 'Tier 1', '2': 'Tier 2', '3': 'Tier 3', t1: 'Tier 1', t2: 'Tier 2', t3: 'Tier 3' };
+const GENDER_MAP = { male: 'Male', m: 'Male', female: 'Female', f: 'Female', other: 'Other', o: 'Other' };
 const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
 
 // RFC-4180-ish parser: quoted fields, escaped quotes, CRLF, BOM.
@@ -48,8 +65,8 @@ export function parseCsvText(text) {
   return rows;
 }
 
-export const AGE_BRACKETS = ['18–25', '26–35', '36–50', '51–64'];
-export const ageBracket = (a) => (a <= 25 ? '18–25' : a <= 35 ? '26–35' : a <= 50 ? '36–50' : '51–64');
+export const AGE_BRACKETS = ['18–25', '26–35', '36–50', '51+'];
+export const ageBracket = (a) => (a <= 25 ? '18–25' : a <= 35 ? '26–35' : a <= 50 ? '36–50' : '51+');
 export const CB_TIERS = ['0–25%', '26–50%', '51–75%', '76–100%'];
 export const cbTier = (p) => (p <= 25 ? '0–25%' : p <= 50 ? '26–50%' : p <= 75 ? '51–75%' : '76–100%');
 export const NPS_BUCKETS = ['−100 to −51', '−50 to −1', '0 to 49', '50 to 100'];
@@ -57,12 +74,12 @@ export const npsBucket = (n) => (n <= -51 ? NPS_BUCKETS[0] : n < 0 ? NPS_BUCKETS
 export const ENG_BUCKETS = ['Low (1–3)', 'Mid (4–7)', 'High (8–10)'];
 export const engBucket = (e) => (e <= 3 ? ENG_BUCKETS[0] : e <= 7 ? ENG_BUCKETS[1] : ENG_BUCKETS[2]);
 export const TENURE_BANDS = ['0–12', '13–24', '25–36', '37–48', '49–60', '61+'];
-export const tenureBand = (t) => TENURE_BANDS[Math.min(5, Math.floor((t - 1) / 12))];
+export const tenureBand = (t) => TENURE_BANDS[Math.max(0, Math.min(5, Math.floor((t - 1) / 12)))];
 export const INCOME_Q = ['Q1 (lowest)', 'Q2', 'Q3', 'Q4 (highest)'];
 export const TIERS = ['Tier 1', 'Tier 2', 'Tier 3'];
 export const GENDERS = ['Male', 'Female', 'Other'];
 
-/** Parse + validate + enrich. Returns { rows, issues, columns } */
+/** Parse + validate + enrich. Returns { rows, dropped, issues, incomeCuts } */
 export function loadDataset(text) {
   const table = parseCsvText(text);
   if (table.length < 2) throw new Error('CSV has no data rows.');
@@ -75,30 +92,43 @@ export function loadDataset(text) {
   }
   if (missing.length) throw new Error(`Missing required column(s): ${missing.join(', ')}`);
 
-  let dropped = 0;
+  // Every rejected row is counted under the first reason found.
+  const issues = { nonNumeric: 0, outOfRange: {}, badCategory: {}, duplicateId: 0 };
+  const seen = new Set();
   const rows = [];
   for (let r = 1; r < table.length; r++) {
     const line = table[r];
     const o = {};
-    let bad = false;
+    let reason = null;
     for (const [key, i] of Object.entries(idx)) {
       const raw = (line[i] ?? '').trim();
       if (NUMERIC.includes(key)) {
         const v = Number(raw);
-        if (raw === '' || !Number.isFinite(v)) { bad = true; break; }
+        if (raw === '' || !Number.isFinite(v)) { reason = 'nonNumeric'; break; }
+        const rg = RANGES[key];
+        if (rg && (v < rg.min || v > rg.max || (rg.int && !Number.isInteger(v)))) { reason = ['outOfRange', key]; break; }
         o[key] = v;
       } else o[key] = raw;
     }
-    if (bad) { dropped++; continue; }
-    // normalise categorical spellings
-    const t = o.tier.replace(/\s+/g, '').toLowerCase();
-    o.tier = t.endsWith('1') ? 'Tier 1' : t.endsWith('2') ? 'Tier 2' : t.endsWith('3') ? 'Tier 3' : o.tier;
-    const g = o.gender.toLowerCase();
-    o.gender = g.startsWith('m') ? 'Male' : g.startsWith('f') ? 'Female' : 'Other';
-    o.prime = o.prime ? 1 : 0;
-    o.churned = o.churned ? 1 : 0;
+    if (!reason) {
+      const tier = TIER_MAP[o.tier.replace(/\s+/g, '').toLowerCase()];
+      const gender = GENDER_MAP[o.gender.replace(/\s+/g, '').toLowerCase()];
+      if (!tier) reason = ['badCategory', 'City tier'];
+      else if (!gender) reason = ['badCategory', 'Gender'];
+      else { o.tier = tier; o.gender = gender; }
+    }
+    if (!reason) {
+      if (seen.has(o.id)) reason = 'duplicateId';
+      else seen.add(o.id);
+    }
+    if (reason) {
+      if (reason === 'nonNumeric' || reason === 'duplicateId') issues[reason]++;
+      else issues[reason[0]][reason[1]] = (issues[reason[0]][reason[1]] || 0) + 1;
+      continue;
+    }
     rows.push(o);
   }
+  const dropped = table.length - 1 - rows.length;
   if (!rows.length) throw new Error('No valid rows after parsing.');
 
   // Income quartile cut-points on the full loaded base
@@ -109,7 +139,7 @@ export function loadDataset(text) {
   for (const o of rows) {
     o.gmv = o.txns * o.atv; // implied monthly spend through Amazon Pay
     o.cumSpend = o.gmv * o.tenure; // cumulative spend proxy
-    o.ltv = o.cumSpend; // transparent LTV proxy = txns x ATV x tenure
+    o.ltv = o.cumSpend; // throughput proxy for LTV = txns x ATV x tenure (cumulative spend, not profit)
     o.spendToIncome = o.income ? o.gmv / o.income : NaN;
     o.ageB = ageBracket(o.age);
     o.cbT = cbTier(o.cashback);
@@ -119,7 +149,7 @@ export function loadDataset(text) {
     o.incQ = o.income <= q1 ? INCOME_Q[0] : o.income <= q2 ? INCOME_Q[1] : o.income <= q3 ? INCOME_Q[2] : INCOME_Q[3];
     o.primeLabel = o.prime ? 'Prime' : 'Non-Prime';
   }
-  return { rows, dropped, incomeCuts: [q1, q2, q3] };
+  return { rows, dropped, issues, incomeCuts: [q1, q2, q3] };
 }
 
 export const DEFAULT_FILTERS = { tier: 'All', prime: 'All', gender: 'All', age: 'All', inc: 'All', churn: 'All' };
@@ -226,3 +256,14 @@ export function fmtINRShort(v) {
   return `${sgn}₹${a.toFixed(0)}`;
 }
 export const pp = (v, d = 1) => (Number.isFinite(v) ? `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(d)} pp` : '–');
+
+/** One-line description of rows rejected during validation. */
+export function describeIssues(issues) {
+  if (!issues) return '';
+  const parts = [];
+  if (issues.duplicateId) parts.push(`${issues.duplicateId} duplicate ID`);
+  if (issues.nonNumeric) parts.push(`${issues.nonNumeric} non-numeric`);
+  for (const [k, n] of Object.entries(issues.outOfRange)) parts.push(`${n} out-of-range ${k}`);
+  for (const [k, n] of Object.entries(issues.badCategory)) parts.push(`${n} unrecognised ${k}`);
+  return parts.join(', ');
+}

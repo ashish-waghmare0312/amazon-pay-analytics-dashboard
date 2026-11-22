@@ -21,7 +21,7 @@ const ROWS = [
   {
     q: 'Q3 · High-LTV segments',
     cols: ['Avg monthly transactions', 'Avg transaction value inr', 'Tenure months', 'City tier', 'Age', 'Monthly income inr', 'Amazon prime member', 'Cashback used pct'],
-    methods: 'LTV proxy = txns × ATV × tenure; Lorenz curve, Gini, top-10/20% share; decile profiling; Pearson r of attributes with LTV; one-way ANOVA + η² by segment; two-way segment heatmap; scenario unit economics (take rate, cashback cost, segment churn as attrition).',
+    methods: 'throughput proxy = txns × ATV × tenure; Lorenz curve, Gini, top-10/20% share; decile profiling; Pearson r of attributes with LTV; one-way ANOVA + η² by segment; two-way segment heatmap; scenario unit economics (take rate, cashback cost, segment churn as attrition).',
     psych: ['Pareto Principle', 'Survivorship Bias'],
     module: 'LTV & Segments',
   },
@@ -34,7 +34,7 @@ const ROWS = [
   },
   {
     q: 'Q5 · Personalised offers',
-    cols: ['LTV proxy (derived)', 'Cashback used pct', 'Net promoter score', 'Customer support contacts', 'Churned'],
+    cols: ['throughput proxy (derived)', 'Cashback used pct', 'Net promoter score', 'Customer support contacts', 'Churned'],
     methods: 'Value tier (LTV rank) × cashback reliance matrix; distress-signal overlay; per-segment scenario P&L (retained margin + cashback savings − offer cost, ROI); blanket-vs-targeted comparison; two-proportion power analysis for A/B holdouts.',
     psych: ['Goal-Gradient Effect', 'Variable Ratio Reinforcement', 'Status Quo Bias', 'Endowment Effect', 'Hyperbolic Discounting'],
     module: 'Offer Strategy Lab',
@@ -71,8 +71,11 @@ export default function BlueprintTab() {
           <ul className="assumptions" style={{ fontSize: 12.8, color: 'var(--text-secondary)' }}>
             <li><b>Significance:</b> p-values from Welch t (Satterthwaite df), Pearson χ² (no Yates correction), one-way ANOVA F; computed in-browser from the filtered rows.</li>
             <li><b>Effect sizes</b> are reported next to every p-value (Cohen’s d, Cramér’s V, η²). With n = 5,000, tiny effects can be “significant”; effect size decides whether they matter commercially.</li>
-            <li><b>Multiple testing:</b> the pocket scan reports how many hits chance alone would produce (≈2.5% one-sided).</li>
-            <li><b>LTV proxy</b> is historical ₹ throughput; forward value adds assumed take rate and cashback cost. Both are clearly labelled scenarios.</li>
+            
+            <li><b>Throughput proxy</b> (txns × ticket × tenure) is cumulative ₹ transaction value, not profit or true lifetime value. Forward value adds assumed take rate, cashback cost and an assumed churn-flag window; all are labelled as scenarios.</li>
+            <li><b>Causality:</b> every comparison is observational. Non-significant results are not proof of no effect; significant ones are associations. Personas use hand-set thresholds and are hypotheses.</li>
+            <li><b>Multiple testing:</b> exploratory subgroup scans report Benjamini–Hochberg FDR q-values; Welch CIs use t critical values at Satterthwaite df; correlation thresholds use the exact t-test on r.</li>
+            <li><b>Cashback:</b> <code>Cashback used pct</code> is utilisation, not rupee spend; ₹ cashback cost is modelled.</li>
             <li><b>Data integrity:</b> implied GMV exceeds stated income for most users, so ₹ values are treated as an index; conclusions rest on ranks, ratios and tests.</li>
             <li><b>Macro / Industry Context</b> panels (green tag) are external, approximate and dated; they are never mixed into CSV metrics (blue tag).</li>
           </ul>
